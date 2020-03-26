@@ -1,0 +1,20 @@
+atmosphere_file ../data/atmmod/afglus.dat
+source solar ../data/solar_flux/atlas_plus_modtran
+mol_modify O3 300. DU
+day_of_year 170
+albedo 0.2
+sza 32.0
+rte_solver disort
+number_of_streams 6
+wavelength 299.0 341.0
+slit_function_file ../examples/TRI_SLIT.DAT
+spline 300 340 1
+quiet 
+aerosol_vulcan 1
+aerosol_haze 6
+aerosol_season 1
+aerosol_visibility 20.0
+aerosol_angstrom 1.1 0.2
+aerosol_modify ssa scale 0.85
+aerosol_modify gg set 0.70
+aerosol_file tau ../examples/AERO_TAU.DAT

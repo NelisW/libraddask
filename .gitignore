@@ -2,3 +2,12 @@
 *.lnk
 .ipynb_checkpoints/
 
+/doc/Report/*.aux
+/doc/Report/libRadtranDask.bbl
+/doc/Report/libRadtranDask.blg
+/doc/Report/libRadtranDask.fdb_latexmk
+/doc/Report/libRadtranDask.fls
+/doc/Report/libRadtranDask.lof
+/doc/Report/libRadtranDask.out
+/doc/Report/libRadtranDask.synctex
+/doc/Report/libRadtranDask.toc

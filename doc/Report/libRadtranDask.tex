@@ -1,0 +1,91 @@
+\documentclass[11pt,a4paper,oldfontcommands,oneside]{memoir}
+\RequirePackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{times}
+
+
+\usepackage{url}
+\usepackage{afterpage}
+\usepackage{pstool}
+\usepackage{comment}
+\usepackage{wrapfig}
+\usepackage[printonlyused]{acronym}
+\usepackage{listings}
+\usepackage{placeins}
+
+\usepackage[
+breaklinks=true,colorlinks=true,
+linkcolor=blue,urlcolor=blue,citecolor=blue,% PDF VIEW
+%linkcolor=black,urlcolor=black,citecolor=black,% PRINT
+bookmarks=true,bookmarksopenlevel=2]{hyperref}
+
+\usepackage{geometry}
+% PDF VIEW
+% \geometry{total={210mm,297mm},
+% left=25mm,right=25mm,%
+% bindingoffset=0mm, top=25mm,bottom=25mm}
+% PRINT
+\geometry{total={210mm,297mm},
+left=20mm,right=20mm,
+bindingoffset=10mm, top=25mm,bottom=25mm}
+
+
+%\OnehalfSpacing
+%\linespread{1.3}
+
+%%% CHAPTER'S STYLE
+\chapterstyle{bianchi}
+%\chapterstyle{ger}
+%\chapterstyle{madsen}
+%\chapterstyle{ell}
+%%% STYLE OF SECTIONS, SUBSECTIONS, AND SUBSUBSECTIONS
+\setsecheadstyle{\Large\bfseries\sffamily\raggedright}
+\setsubsecheadstyle{\large\bfseries\sffamily\raggedright}
+\setsubsubsecheadstyle{\bfseries\sffamily\raggedright}
+
+
+%%% STYLE OF PAGES NUMBERING
+%\pagestyle{companion}\nouppercaseheads
+%\pagestyle{headings}
+%\pagestyle{Ruled}
+\pagestyle{plain}
+\makepagestyle{plain}
+\makeevenfoot{plain}{\thepage}{}{}
+\makeoddfoot{plain}{}{}{\thepage}
+\makeevenhead{plain}{}{}{}
+\makeoddhead{plain}{}{}{}
+
+\setlength{\parindent}{0em}
+\setlength{\parskip}{0.7em}
+
+\maxsecnumdepth{subsection} % chapters, sections, and subsections are numbered
+\maxtocdepth{subsection} % chapters, sections, and subsections are in the Table of Contents
+
+\includeonly{c00,c01,c02,c03,c04,c05,c99}
+
+
+\begin{document}
+
+\include{abbrev} % Abbreviations
+
+\clearpage
+
+\include{c00} % front matter
+\include{c01} % Introduction
+\include{c02} % Dask
+\include{c03} % libRadtran
+\include{c04} % Server setup
+\include{c05} % Serve use
+\include{c99} % Conclusion
+% \appendix
+% \input{lic.tex}
+
+
+
+\end{document}
+
+

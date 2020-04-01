@@ -1,0 +1,21 @@
+% -*- TeX -*- -*- UK -*- -*- Soft -*-
+
+\chapter{Introduction}
+\label{chap:Introduction}
+
+\section{Overview}
+\label{sec:introductionOverview}
+
+\libradtran{} \cite{EmdeLibRadtran2016,libRadtran2005} is a free C- and Fortran-based collection of programs and libraries for the calculation of radiative transfer and solar and thermal radiation in the earth's atmosphere.
+The concept of a network-based \libradtran{} server allows the  distributed deployment of the \libradtran{} functionality. The server approach allows easy access for any number of users\footnote{\libradtran{} is easiest to build on Linux and, when deployed on a Linux server, provide easy access to Windows users.} and also supports deployment on clusters with many computational nodes.
+
+Dask \cite{daskhomepage2020} is a library for parallel computing in Python that works on a local computer, a remote computer and cluster computers.
+Dask has two parts: (1) dynamic task scheduling for executing, and (2) fast processing of Python data structures (e.g., numpy, pandas, etc.).  The main interest in Dask for this application is for distributed  processing, with less interest in fast processing of Python structures. Using Dask requires only Python familiarity and can deploy tasks to large clusters with thousands of cores.
+
+The \libradtrandask{}  is a Python module that integrates \libradtran{} with Dask with the aim to provide a remote and network-distributed \libradtran{}. This functionality is only available via Python, but this is not considered a major issue with most of the work flow is in Python.
+
+\section{Document Structure}
+\label{sec:DocumentStructure}
+
+
+This  \todo{commplete doc structure} document

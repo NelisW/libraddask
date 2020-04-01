@@ -1,3 +1,5 @@
+% -*- TeX -*- -*- UK -*- -*- Soft -*-
+
 \documentclass[11pt,a4paper,oldfontcommands,oneside]{memoir}
 \RequirePackage[english]{babel}
 \usepackage[utf8]{inputenc}
@@ -7,7 +9,7 @@
 \usepackage{xcolor}
 \usepackage{times}
 
-
+\usepackage[textsize=tiny]{todonotes}
 \usepackage{url}
 \usepackage{afterpage}
 \usepackage{pstool}
@@ -39,9 +41,6 @@ bindingoffset=10mm, top=25mm,bottom=25mm}
 
 %%% CHAPTER'S STYLE
 \chapterstyle{bianchi}
-%\chapterstyle{ger}
-%\chapterstyle{madsen}
-%\chapterstyle{ell}
 %%% STYLE OF SECTIONS, SUBSECTIONS, AND SUBSUBSECTIONS
 \setsecheadstyle{\Large\bfseries\sffamily\raggedright}
 \setsubsecheadstyle{\large\bfseries\sffamily\raggedright}
@@ -62,17 +61,74 @@ bindingoffset=10mm, top=25mm,bottom=25mm}
 \setlength{\parindent}{0em}
 \setlength{\parskip}{0.7em}
 
-\maxsecnumdepth{subsection} % chapters, sections, and subsections are numbered
-\maxtocdepth{subsection} % chapters, sections, and subsections are in the Table of Contents
+\maxsecnumdepth{subsection}
+\maxtocdepth{subsection} 
 
-\includeonly{c00,c01,c02,c03,c04,c05,c99}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%the following is required for carriage return symbol
+%ftp://ftp.botik.ru/rented/znamensk/CTAN/fonts/mathabx/texinputs/mathabx.dcl
+%https://secure.kitserve.org.uk/content/mathabx-font-symbol-redefinition-clash-latex
+\DeclareFontFamily{U}{mathb}{\hyphenchar\font45}
+\DeclareFontShape{U}{mathb}{m}{n}{
+      <5> <6> <7> <8> <9> <10> gen * mathb
+      <10.95> mathb10 <12> <14.4> <17.28> <20.74> <24.88> mathb12
+      }{}
+\DeclareSymbolFont{mathb}{U}{mathb}{m}{n}
+\DeclareMathSymbol{\dlsh}{3}{mathb}{"EA}
+
+
+% set up the listings environment
+%\begin{lstlisting}[hkey=value list]
+%code here
+%\end{lstlisting}
+%\lstinline[hkey=value list]<character>source code<same character>
+%\lstinputlisting[lastline=4]{listings.sty}
+\definecolor{LightGrey}{rgb}{0.96,0.96,0.96}
+\lstset{ %
+upquote=true, % gives the upquote instead of the curly quote
+basicstyle=\ttfamily\footnotesize,       % the size of the fonts that are used for the code
+keywordstyle=,                  % keywords not bold
+numbers=none,                   % where to put the line-numbers
+backgroundcolor=\color{LightGrey},  % choose the background color,  add \usepackage{color}
+showspaces=false,               % show spaces adding particular underscores
+showstringspaces=false,         % underline spaces within strings
+showtabs=false,                 % show tabs within strings adding particular underscores
+frame=none,                   % adds a frame around the code
+tabsize=2,              % sets default tabsize to 2 spaces
+captionpos=b,                   % sets the caption-position to bottom
+breaklines=true,        % sets automatic line breaking
+breakatwhitespace=false,    % sets if automatic breaks should only happen at whitespace
+prebreak=\raisebox{0ex}[0ex][0ex]{$\dlsh$}
+%escapeinside={\%}{)}          % if you want to add a comment within your code
+}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\myum}{\si{\micro\metre}}
+\newcommand{\myus}{\si{\micro\second}}
+\newcommand{\myuw}{\si{\micro\watt}}
+\newcommand{\myua}{\si{\micro\ampere}}
+\newcommand{\myusr}{\si{\micro\steradian}}
+
+\newcommand{\HiLite}[1]{\fcolorbox{red}{red}{#1}}
+\newcommand{\marginnote}[1]{ \marginpar{{\scriptsize #1}}}
+
+\newcommand{\libradtran}{libRadtran}
+\newcommand{\libradtrandask}{libRadtranDask}
+
+\newcommand{\lstinlineL}[1]{\lstinline[basicstyle=\ttfamily\large]{#1}}
+\newcommand{\lstinlineN}[1]{\lstinline[basicstyle=\ttfamily\normalsize]{#1}}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\bibliographystyle{./bib/dpsscjw} 
+
+\includeonly{c00,c01,c02,c03,c04,c05,c99,c100}
 
 
 \begin{document}
 
-\include{abbrev} % Abbreviations
-
-\clearpage
 
 \include{c00} % front matter
 \include{c01} % Introduction
@@ -81,10 +137,9 @@ bindingoffset=10mm, top=25mm,bottom=25mm}
 \include{c04} % Server setup
 \include{c05} % Serve use
 \include{c99} % Conclusion
+\include{c100} % References
 % \appendix
-% \input{lic.tex}
-
-
+% \include{c0a}
 
 \end{document}
 

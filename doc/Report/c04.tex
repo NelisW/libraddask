@@ -4,3 +4,69 @@
 \chapter{Server Setup}
 \label{chap:ServerSetup}
 
+
+
+\section{Work on nimbus (146.64.246.94) for user \lstinline{dgriffith}}
+
+Home directory \lstinline{~} is \lstinline{/home/dgriffith}
+
+\subsection{Bring nimbus to Python 3 status}
+
+Installed a python 3 environment for morticia: mordevpy37, with the morticia dependencies listed above.
+
+Changed the folder name  \lstinline{~/GitHub/morticia} to \lstinline{~/GitHub/morticia2} to keep the old copy available.
+
+Cloned the python 3 version of morticia into folder \lstinline{~/GitHub/morticia}, from \lstinline{https://github.com/NelisW/morticia}
+
+To see where the \lstinline{site-packages} folder on your anaconda installation are use this code:
+
+\begin{lstlisting}
+    from distutils.sysconfig import get_python_lib
+    print(get_python_lib())
+
+\end{lstlisting}
+Added \lstinline{morticia.pth} to the prepared environment's \lstinline{site-packages} folder, e.g.,  \lstinline{~/anaconda2/envs/mordevpy37/lib/python3.7/site-packages/morticia.pth}. The contents of this file is the single line. 
+
+    \lstinline{/home/dgriffith/GitHub/morticia}
+
+
+\subsection{libRadTran server}
+
+1. On the PC activate the Python 3 morticia environment 
+
+1. Start up the VPN (if used) and find the IP number allocated to the VPN ethernet0. On Windows uUse \lstinline{ipconfig} and look for something like the following (the Ethernet adapter connection number may be different, look for the DNS suffix that says \lstinline{csir.co.za}). This should be an IP address on the CSIR network \lstinline{146.64.xxx.xxx}:
+
+\begin{lstlisting}
+Ethernet adapter Local Area Connection 2:
+
+Connection-specific DNS Suffix  . : csir.co.za
+Link-local IPv6 Address . . . . . : fe80::8992:152a:c1f0:1260%27
+IPv4 Address. . . . . . . . . . . : 146.64.202.118
+Subnet Mask . . . . . . . . . . . : 255.255.0.0
+Default Gateway . . . . . . . . . :
+\end{lstlisting}
+
+    To find the IP address on Linux use \lstinline{ip addr show}.
+
+
+1. On the PC start the Dask scheduler, using the VPN IP address
+
+
+\begin{lstlisting}
+      dask-scheduler --host 146.64.202.118
+\end{lstlisting}
+
+1. On nimbus activate the Python 3 morticia environment 
+
+1. On nimbus cd to the libRadTran bin folder  \lstinline{/home/dgriffith/libRadtran/libRadtran-2.0.2/bin/}
+
+1. On nimbus start the Dask scheworker process, using the VPN IP address and the Dask port number
+
+\begin{lstlisting}
+    dask-worker tcp://146.64.202.118:8786
+\end{lstlisting}
+
+1. Open the notebook and set the scheduler using the VPN host address
+
+
+

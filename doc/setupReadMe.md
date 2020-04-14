@@ -187,4 +187,35 @@ Added `morticia.pth` to the prepared environment's `site-packages` folder, e.g.,
 1. Open the notebook and set the scheduler using the VPN host address
 
 
+https://docs.dask.org/en/latest/  
+https://docs.dask.org/en/latest/futures.html  
+https://github.com/dask/dask-tutorial/blob/master/05_distributed.ipynb
 
+if Remote:
+    serverusername = 'tcp://146.64.202.118:8786'
+    client = Client(serverusername)
+
+
+#     cluster = SSHCluster(
+#         ["146.64.246.94", "146.64.246.94", "146.64.246.94", "146.64.246.94"],
+#         connect_options={"known_hosts": None},
+#         worker_options={"nthreads": 2},
+#         scheduler_options={"port": 0, "dashboard_address": ":8797"}
+#         )
+
+else:
+    # Setup a local cluster.
+    # By default this sets up 1 worker per core    
+    client = Client() # use local host
+
+#client.get_versions(check=True)
+
+client
+
+
+
+dask-scheduler --host 146.64.246.94 --port 8786 --bokeh-port <open-port>
+
+dask-worker --host 172.16.4.30 146.64.246.94:8786 --worker-port 8786
+    
+ https://stackoverflow.com/questions/51354166/using-dask-in-ec2-instances-throws-couldnt-gather-1-keys/51355260   

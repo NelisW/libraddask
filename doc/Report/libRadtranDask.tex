@@ -1,6 +1,6 @@
 % -*- TeX -*- -*- UK -*- -*- Soft -*-
 
-\documentclass[11pt,a4paper,oldfontcommands,oneside]{memoir}
+\documentclass[12pt,a4paper,oldfontcommands,oneside]{memoir}
 \RequirePackage[english]{babel}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -8,6 +8,7 @@
 \usepackage{graphicx}
 \usepackage{xcolor}
 \usepackage{times}
+\usepackage{textcomp} % additional fonts, required for upquote in listings and \textmu
 
 \usepackage[textsize=tiny]{todonotes}
 \usepackage{url}
@@ -84,7 +85,11 @@ bindingoffset=10mm, top=25mm,bottom=25mm}
 %\end{lstlisting}
 %\lstinline[hkey=value list]<character>source code<same character>
 %\lstinputlisting[lastline=4]{listings.sty}
+
 \definecolor{LightGrey}{rgb}{0.96,0.96,0.96}
+\definecolor{LightGrey}{rgb}{0.95,0.95,0.95}
+\definecolor{LightRed}{rgb}{1.0,0.9,0.9}
+
 \lstset{ %
 upquote=true, % gives the upquote instead of the curly quote
 basicstyle=\ttfamily\footnotesize,       % the size of the fonts that are used for the code
@@ -101,6 +106,20 @@ breaklines=true,        % sets automatic line breaking
 breakatwhitespace=false,    % sets if automatic breaks should only happen at whitespace
 prebreak=\raisebox{0ex}[0ex][0ex]{$\dlsh$}
 %escapeinside={\%}{)}          % if you want to add a comment within your code
+}
+
+
+\lstdefinestyle{tinysize}{ %
+  basicstyle=\ttfamily\tiny,       % the size of the fonts that are used for the code
+}
+
+\lstdefinestyle{incellstyle}{
+  backgroundcolor=\color{LightGrey},  % choose the background color,  add \usepackage{color}
+  language=Python,
+}
+
+\lstdefinestyle{outcellstyle}{
+  backgroundcolor=\color{LightRed},   % choose the background color; you must add \usepackage{color} or \usepackage{xcolor}
 }
 
 
@@ -124,7 +143,7 @@ prebreak=\raisebox{0ex}[0ex][0ex]{$\dlsh$}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \bibliographystyle{./bib/dpsscjw} 
 
-\includeonly{c00,c01,c02,c03,c04,c05,c99,c100}
+\includeonly{c00,c01,c02,c03,c04,c05,c99,c100,c0a}
 
 
 \begin{document}
@@ -138,8 +157,9 @@ prebreak=\raisebox{0ex}[0ex][0ex]{$\dlsh$}
 \include{c05} % Serve use
 \include{c99} % Conclusion
 \include{c100} % References
-% \appendix
-% \include{c0a}
+\appendix
+\include{c0a} % Simple Dsk examples
+
 
 \end{document}
 

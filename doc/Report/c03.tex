@@ -5,7 +5,123 @@
 \label{chap:libRadtran}
 
 
+\section{\libradtran{} Overview}
+
+From \cite{EmdeLibRadtran2016}:
+``
+\libradtran{} is a widely used software package for
+radiative transfer calculations. It allows one to compute (polarized) radiances, irradiance, and actinic fluxes in the solar and thermal spectral regions. \libradtran{} has been used
+for various applications, including remote sensing of clouds,
+aerosols and trace gases in the Earth’s atmosphere, climate
+studies, e.g., for the calculation of radiative forcing due to
+different atmospheric components, for UV forecasting, the
+calculation of photolysis frequencies, and for remote sensing
+of other planets in our solar system. The package has been
+described in Mayer and Kylling (2005) \cite{libRadtran2005}. Since then several
+new features have been included, for example polarization,
+Raman scattering, a new molecular gas absorption parameterization, and several new parameterizations of cloud and
+aerosol optical properties. Furthermore, a graphical user interface is now available, which greatly simplifies the usage
+of the model, especially for new users. This paper gives an
+overview of \libradtran{} version 2.0.1 with a focus on new features. Applications including these new features are provided
+as examples of use. A complete description of \libradtran{} and
+all its input options is given in the user manual included in
+the \libradtran{} software package, which is freely available at
+\lstinline{http://www.libradtran.org}.''
+
+See also 
+\cite{libRadtran2005,libRadTranUserGuide2012,libRadtranDownload2020,libRadtranmuenchen2020}.
+
+
+\section{Building \libradtran{}}
+
+\subsection{Create the server account and software}
+
+\begin{enumerate}
+\item Create a user account on the server from which libRadtran is served. This is a standard Linux admin task.  For the present case the account name is dgriffith.
+
+\item Download libRadtran from \lstinline{http://www.libradtran.org/doku.php?id=download} and follow the installation instructions. The instructions are repeated below.
+
+    In this case version 2.0.3 is downloaded and installed.
+
+\item Unzip the compressed tar file with 
+
+    tar -xvf  libradtran-2.0.3.tar.gz
+
+\item Ensure that you have Python 2.7.XXX
+
+\item Compile the distribution
+
+        cd libRadtran-2.0.3
+        ./configure
+        make
+
+\item Test the program
+    make check (make sure to use GNU make)
+
+\end{enumerate}
+
+
+\section{Set up Python}
 
 
 
-\cite{libRadTranUserGuide2019,libRadtranDownload2020,libRadtranmuenchen2020}
+\subsection{Creating the environment}
+
+Create environment with 
+
+    conda create --name mort python=3.7 anaconda
+
+\subsection{Additional packages}
+
+Search for packages here: https://anaconda.org/conda-forge/
+
+conda install  dill easygui ipyparallel easygui pyephem xarray
+
+\lstinline{paramiko} and \lstinline{sphinx} are required in morticia, but installed with the Anaconda distribution.  \lstinline{xray} is now renamed to \lstinline{xarray} in Python. All the code has been updated to this effect; 
+
+The packages required by morticia, what must be user installed are:
+
+- dill Serialize all of python (almost)
+- easygui EasyGUI is a module for very simple, very easy GUI programming in Python.
+- ipyparallel  Interactive Parallel Computing with IPython
+- pyephem Compute positions of the planets and stars
+- xarray N-D labeled arrays and datasets in Python.
+
+The  following packages may not be found on the standard anaconda source channels.
+In this case use the install format (replace the channel with any other appropriate channel if this does not work):  
+
+    conda install -c conda-forge easygui
+
+- easygui
+- pyephem
+
+
+\subsection{Make Morticia known}
+
+The morticia library is not installed in the Python site-packages tree, so Python must know where to find it. To tell Python where to find this library create a file with the filename \lstinline{morticia.pth} in the \lstinline{site-packages} folder of the \lstinline{mort} environment. On my PC the environment is here: 
+
+    C:/ProgramData/Anaconda3/envs/mort/lib/site-packages/morticia.pth
+
+On Linux it is in a location similar to this
+
+    ~/anaconda2/envs/mordevpy37/lib/python3.7/site-packages/morticia.pth
+
+The file must have only one line, and this line must be the morticia library location.    In my case the library was cloned from the repository into the following folder, and this must be the contents of the file:
+
+    W:/Morticia/OSS-gitlab/morticia
+
+or on the nimbus server (146.64.246.94) the contents must be
+
+    /home/dgriffith/GitHub/morticia
+
+
+
+\subsection{Prepare for Jupyter}
+
+Make the environment visible in a Jupyter notebook"
+
+    conda install notebook ipykernel
+    ipython kernel install
+
+See [here])https://github.com/NelisW/ComputationalRadiometry/blob/master/00-Installing-Python-pyradi.ipynb) for more detail.
+

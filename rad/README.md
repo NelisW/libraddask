@@ -1,6 +1,6 @@
 # librad - An interface to libRadtran
 ## Introduction
-libRadtran is a collection of tools for atmospheric radiative transfer computation. 
+libRadtran (http://www.libradtran.org/) is a collection of tools for atmospheric radiative transfer computation. 
 The main driver utility for libRadtran is an executable called uvspec. This utility
 reads an input file (generally *.INP) of keywords and keyword parameters that set up
 and execute the radiative transfer computation. A variety of radiative transfer solvers

@@ -245,7 +245,7 @@ If the process does not work correctly, check for the versions by using \\
 \end{lstlisting}
 
 The solution to this problem is to ensure that the same versions are present on all computers.
-See \todo{add a link to section on fixing versions} here.
+See Section~\ref{sec:Additionalpackages} on installing specific package versions.
 
 
 
@@ -746,7 +746,7 @@ In the examples shown above the code and data are serialised in the client befor
 \begin{figure}[htbp]
     \centering
 \includegraphics[width=.8\textwidth]{pic/DaskSerialisation02}
-    \caption{Dask serialisation visualised}
+    \caption{Dask serialisation and worker execution visualised}
     \label{fig:DaskSerialisation02}
 \end{figure}
 
@@ -840,16 +840,16 @@ distributed.core - INFO - Starting established connection
 \end{lstlisting}
 
 \item \textbf{Start the client}  When the client is initiated, pass the scheduler IP:port address:
-\end{enumerate}
 
-
-\begin{lstlisting}[style=incellstyle]
+\begin{lstlisting}[style=tinysize]
 # to start a local client with a remote scheduler
 client = Client('146.64.246.94:8786') 
-client.get_versions(check=True)
-
 \end{lstlisting}
 
+To see the Python module versions:
+\begin{lstlisting}[style=tinysize]
+client.get_versions(check=True)
+\end{lstlisting}
 
 \begin{lstlisting}[style=outcellstyle]
 {'scheduler': {'host': (('python', '3.7.6.final.0'),
@@ -909,11 +909,10 @@ client.get_versions(check=True)
    'blosc': None}}}
 \end{lstlisting}
 
-
-\begin{lstlisting}[style=incellstyle]
+To see the Dask scheduler information:
+\begin{lstlisting}[style=tinysize]
 client.scheduler_info()
 \end{lstlisting}
-
 
 \begin{lstlisting}[style=outcellstyle]
 {'type': 'Scheduler',
@@ -943,6 +942,9 @@ client.scheduler_info()
     'bandwidth': {'total': 100000000, 'workers': {}, 'types': {}}},
    'nanny': 'tcp://146.64.246.94:35459'}}}
 \end{lstlisting}
+
+\end{enumerate}
+
 
 
 \subsubsection{Running workers remotely}

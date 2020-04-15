@@ -8,8 +8,7 @@
 \section{\libradtran{} Overview}
 
 From \cite{EmdeLibRadtran2016}:
-``
-\libradtran{} is a widely used software package for
+``\libradtran{} is a widely used software package for
 radiative transfer calculations. It allows one to compute (polarized) radiances, irradiance, and actinic fluxes in the solar and thermal spectral regions. \libradtran{} has been used
 for various applications, including remote sensing of clouds,
 aerosols and trace gases in the Earth’s atmosphere, climate
@@ -34,94 +33,250 @@ See also
 
 \section{Building \libradtran{}}
 
+\subsection{System Reference}
+For reference purposes this installation was done on the following Linux system: Debian 4.9.110, running the 4.9.0-8-amd64 Linux kernel.
+\begin{lstlisting}[style=tinysize]
+(devpy27) dgriffith@servername:~/libRadtran/libRadtran-2.0.3/examples$ uname -a
+Linux servername 4.9.0-8-amd64 #1 SMP Debian 4.9.110-3+deb9u6 (2018-10-08) x86_64 GNU/Linux
+\end{lstlisting}
+
+
+
 \subsection{Create the server account and software}
 
 \begin{enumerate}
-\item Create a user account on the server from which libRadtran is served. This is a standard Linux admin task.  For the present case the account name is dgriffith.
+\item Create a user account on the server from which libRadtran is served. This is a standard Linux admin task.  For the present case assume the account name is \lstinline{dgriffith}.
 
-\item Download libRadtran from \lstinline{http://www.libradtran.org/doku.php?id=download} and follow the installation instructions. The instructions are repeated below.
+\item Download libRadtran from \lstinline{http://www.libradtran.org/doku.php?id=download} and follow the installation instructions. The instructions are repeated below.      In this case \libradtran{} version 2.0.3 is downloaded and installed.
 
-    In this case version 2.0.3 is downloaded and installed.
+\item Copy the downloaded file to the folder where it must be installed. Unzipping the compressed tar file with the following command will create a folder \lstinline{libRadtran-2.0.3}
 
-\item Unzip the compressed tar file with 
-
+\begin{lstlisting}
     tar -xvf  libradtran-2.0.3.tar.gz
+\end{lstlisting}
+\item The \libradtran{} installation, building, and testing requires Python 2.7 (installation will fail if Python 3 is used).  If necessary, install Python 2.7 in a conda environment in order to proceed with the \libradtran{} installation.  For the purpose of this discussion we assume that the Python 2.7 environment is named \lstinline{devpy27}.
 
-\item Ensure that you have Python 2.7.XXX
+\begin{lstlisting}
+    conda create --name devpy27 python=2.7 anaconda
+\end{lstlisting}
 
-\item Compile the distribution
+\item Compile the distribution by doing the following:
 
-        cd libRadtran-2.0.3
-        ./configure
-        make
+\begin{lstlisting}
+    conda activate devpy27
+    cd libRadtran-2.0.3
+    ./configure
+    make
+\end{lstlisting}
+\item Test the program, (make sure to use GNU make):
 
-\item Test the program
-    make check (make sure to use GNU make)
+\begin{lstlisting}
+    conda activate devpy27
+    make check 
+\end{lstlisting}
+ As the test progresses the test results will display in the terminal (the display shown here has been shortened):
+
+
+\begin{lstlisting}[style=tinysize]
+(base) dgriffith@servername:~/libRadtran/libRadtran-2.0.3$ conda activate devpy27
+(devpy27) dgriffith@servername:~/libRadtran/libRadtran-2.0.3$ make check
+for dir in examples src_py libsrc_c libsrc_f src GUI lib; do make -C $dir all || exit $?; done
+make[1]: Entering directory '/home/dgriffith/libRadtran/libRadtran-2.0.3/examples'
+
+...
+
+make[1]: Entering directory '/home/dgriffith/libRadtran/libRadtran-2.0.3/test'
+/usr/bin/perl test.pl
+Running various libRadtran tests. This may take some time....
+
+The numbers in the parenthesis behind the name of the tests are:
+ 1st number:  The lower absolute limit of values included in the test.
+              Values in the output less than limit are ignored.
+ 2nd number:  The maximum difference allowed between local test
+              results and the standard results (in percentage).
+
+If this is still unclear, check the source in test/test.pl.in.
+
+make_slitfunction test
+make_slitfunction (0.00001,   0.1)............................................. ok.
+All make_slitfunction tests succeeded.
+make_angresfunc test
+make_angresfunc (0.00001,   0.1)............................................... ok.
+All make_angresfunc tests succeeded.
+angres test
+angres (0.00001,   0.1)........................................................ ok.
+All angres tests succeeded.
+Some \lstinline{uvspec} tests
+uvspec simple (0.00001,   0.1)................................................. ok.
+disort clear sky (0.00001,   0.1).............................................. ok.
+disort aerosol (0.00001,   0.1)................................................ ok.
+disort aerosol moments (0.00001,   0.1)........................................ ok.
+disort aerosol refractive index (0.00001,   0.1)............................... ok.
+disort BRDF Ross-Li (0.00050,   0.1)........................................... ok.
+disort water cloud (0.00001,   0.1)............................................ ok.
+disort SO2 (0.00001,   0.1).................................................... ok.
+disort radiances (0.00001,   0.3).............................................. ok.
+disort SCIAMACHY HG approximation (0.00001,   0.3)............................. ok.
+disort aerosol (0.00001,   0.1)................................................ ok.
+disort wc Legendre moments (0.00001,   0.1).................................... ok.
+disort water and ice clouds (0.00001,   0.2)................................... ok.
+disort cloud overlap random (0.00001,   0.2)................................... ok.
+disort cloud overlap maximum-random (0.00001,   0.2)........................... ok.
+disort cloud overlap maximum (0.00001,   0.2).................................. ok.
+disort, albedo and altitude map (0.00001,   0.7)............................... ok.
+disort BRDF (0.00050,   0.1)................................................... ok.
+disort BRDF Hapke (0.00050,   0.1)............................................. ok.
+disort BRDF AMBRALS (0.00050,   0.1)........................................... ok.
+disort BRDF AMBRALS file (0.00050,   0.1)...................................... ok.
+twostr aerosol and water cloud (0.00001,   0.1)................................ ok.
+twostrpp aerosol and water cloud (0.00001,   0.1).............................. ok.
+c_twostr aerosol and water cloud (0.00001,   0.1).............................. ok.
+rodents aerosol and water cloud (0.00001,   0.1)............................... ok.
+rodents aerosol and water cloud, zout (0.00001,   0.1)......................... ok.
+rodents aerosol and water cloud, zout, thermal (0.00001,   0.1)................ ok.
+single scattering lidar, water cloud (0.00001,   0.1).......................... ok.
+twostrebe aerosol and water cloud (0.00001,   0.1)............................. ok.
+twomaxrand water cloud (0.00001,   0.1)........................................ ok.
+twomaxrand wc/ic cloud (0.00001,   0.1)........................................ ok.
+polradtran (0.00001,   0.1).................................................... ok.
+profiles 1 (0.00001,   0.2).................................................... ok.
+profiles 2 (0.00001,   0.1).................................................... ok.
+profiles 3 (0.00001,   0.1).................................................... ok.
+profiles 4 (0.00001,   0.1).................................................... ok.
+radiosonde (0.00001,   0.4).................................................... ok.
+redistribution (0.00001,   0.1)................................................ ok.
+AVHRR [Kratz, 1995], channel 1, solar (0.00001,   0.1)......................... ok.
+AVHRR [Kratz, 1995], channel 2, solar (0.00100,   0.1)......................... ok.
+AVHRR [Kratz, 1995], channel 3, solar (0.00001,   0.1)......................... ok.
+AVHRR [Kratz, 1995], channel 3, thermal (0.00001,   0.1)....................... ok.
+AVHRR [Kratz, 1995], channel 4, thermal (0.00001,   0.1)....................... ok.
+AVHRR [Kratz, 1995], channel 5, thermal (0.00001,   0.1)....................... ok.
+correlated-k [Kato et al., 1999], twostr (0.00100,   0.1)...................... ok.
+correlated-k, new Kato tables, twostr (0.00100,   0.1)......................... ok.
+correlated-k [Fu and Liou, 1992/93], disort (0.01000,   1.5)................... ok.
+correlated-k [Fu and Liou, 1992/93], ice clouds (0.01000,   1.5)............... ok.
+Fu and Liou, thermal irradiance, disort (0.00001,   0.9)....................... ok.
+LOWTRAN absorption parameterization (0.00001,   2.2)........................... ok.
+LOWTRAN absorption parameterization, thermal (0.00001,   1.0).................. ok.
+SSRadar Test (0.01000,   0.0).................................................. ok.
+atmospheric reflectivity (0.00001,   0.1)...................................... ok.
+IPA and correlated_k (0.00100,   0.2).......................................... ok.
+cloudcover and correlated_k (0.00100,   1.8)................................... ok.
+cloudcover, correlated_k and redistribution (0.00100,   1.8)................... ok.
+wc_ipa_files and correlated_k (0.00100,   0.1)................................. ok.
+wc_ipa_files, correlated_k and redistribution (0.00100,   0.1)................. ok.
+wc_ipa_files, ic_ipa_files and redistribution (0.00001,   0.1)................. ok.
+heating rates and wc_ipa_files (0.00100,   0.2)................................ ok.
+cooling rates and wc_ipa_files (0.00100,   1.9)................................ ok.
+transmittance_wl_file (0.00100,   0.1)......................................... ok.
+raman (0.10000,   0.1)......................................................... ok.
+fluorescence (0.10000,   0.1).................................................. ok.
+reptran_thermal (0.01000,   0.1)............................................... ok.
+reptran_solar (0.01000,   0.2)................................................. ok.
+tzs (0.01000,   0.1)........................................................... ok.
+disort_spherical_albedo (0.01000,   0.1)....................................... ok.
+MYSTIC polarisation (0.00001,   3.0)........................................... ok.
+MYSTIC polarized surface reflection (BPDF) (0.00001,   1.0)....................    1 serious differences.  Maximum difference:   1.030000%. Absolute values (test,ans): (-7.743240e-03, -7.663602e-03).
+MYSTIC backward polarized surface reflection (BPDF) (0.00001,   1.0)........... ok.
+MYSTIC spectral importance sampling (REPTRAN) (0.00001,   5.0)................. ok.
+MYSTIC boxairmass factor (0.00001,   1.0)...................................... ok.
+MYSTIC spherical (0.00001,   2.0).............................................. ok.
+NCA 1.0 (0.00001,   0.1)....................................................... ok.
+NCA 2.0 cuboid (0.00001,   0.1)................................................ ok.
+NCA 2.0 triangle (0.00001,   0.1).............................................. ok.
+1 of the \lstinline{uvspec} tests failed.
+make[1]: Leaving directory '/home/dgriffith/libRadtran/libRadtran-2.0.3/test'
+(devpy27) dgriffith@servername:~/libRadtran/libRadtran-2.0.3$
+\end{lstlisting}
+
+From the above test report it is evident that the \lstinline{MYSTIC polarized surface reflection (BPDF)} test had a result error difference of 1.03\%.
+All the other tests passed.
 
 \end{enumerate}
 
+\section{Introductory Example Use}
 
-\section{Set up Python}
+The following is taken (with some adaptation) from \\
+\lstinline{http://www.libradtran.org/doku.php?id=basic_usage}
 
+Those users who are not familiar with the predecessor of \libradtran(), \lstinline{uvspec}, please note the following: The central program of the package is an executable called \lstinline{uvspec} which can be found in the bin directory. If you are interested in a user-friendly program for radiative transfer calculations, \lstinline{uvspec} is the software you want to become familiar with. A description of \lstinline{uvspec} is provided in the first part of the manual. Examples of its use, including various input files and corresponding output files for different atmospheric conditions, are provided in the examples directory. For a quick try of \lstinline{uvspec} go to the examples directory and run \lstinline{uvspec}:
 
-
-\subsection{Creating the environment}
-
-Create environment with 
-
-    conda create --name mort python=3.7 anaconda
-
-\subsection{Additional packages}
-
-Search for packages here: https://anaconda.org/conda-forge/
-
-conda install  dill easygui ipyparallel easygui pyephem xarray
-
-\lstinline{paramiko} and \lstinline{sphinx} are required in morticia, but installed with the Anaconda distribution.  \lstinline{xray} is now renamed to \lstinline{xarray} in Python. All the code has been updated to this effect; 
-
-The packages required by morticia, what must be user installed are:
-
-- dill Serialize all of python (almost)
-- easygui EasyGUI is a module for very simple, very easy GUI programming in Python.
-- ipyparallel  Interactive Parallel Computing with IPython
-- pyephem Compute positions of the planets and stars
-- xarray N-D labeled arrays and datasets in Python.
-
-The  following packages may not be found on the standard anaconda source channels.
-In this case use the install format (replace the channel with any other appropriate channel if this does not work):  
-
-    conda install -c conda-forge easygui
-
-- easygui
-- pyephem
-
-
-\subsection{Make Morticia known}
-
-The morticia library is not installed in the Python site-packages tree, so Python must know where to find it. To tell Python where to find this library create a file with the filename \lstinline{morticia.pth} in the \lstinline{site-packages} folder of the \lstinline{mort} environment. On my PC the environment is here: 
-
-    C:/ProgramData/Anaconda3/envs/mort/lib/site-packages/morticia.pth
-
-On Linux it is in a location similar to this
-
-    ~/anaconda2/envs/mordevpy37/lib/python3.7/site-packages/morticia.pth
-
-The file must have only one line, and this line must be the morticia library location.    In my case the library was cloned from the repository into the following folder, and this must be the contents of the file:
-
-    W:/Morticia/OSS-gitlab/morticia
-
-or on the nimbus server (146.64.246.94) the contents must be
-
-    /home/dgriffith/GitHub/morticia
+\begin{lstlisting}
+    cd libRadtran-2.0.3/examples
+    ../bin/uvspec < UVSPEC_CLEAR.INP > test.out
+\end{lstlisting}
 
 
 
-\subsection{Prepare for Jupyter}
+The input file for this example run is given in \lstinline{UVSPEC_CLEAR.INP}
 
-Make the environment visible in a Jupyter notebook"
+\begin{lstlisting}[style=tinysize]
+                         # Location of atmospheric profile file. 
+atmosphere_file ../data/atmmod/afglus.dat
+                         # Location of the extraterrestrial spectrum
+source solar ../data/solar_flux/atlas_plus_modtran
+mol_modify O3 300. DU    # Set ozone column
+day_of_year 170          # Correct for Earth-Sun distance
+albedo 0.2               # Surface albedo
+sza 32.0                 # Solar zenith angle
+rte_solver disort        # Radiative transfer equation solver
+number_of_streams  6     # Number of streams
+wavelength 299.0 341.0   # Wavelength range [nm]
+slit_function_file ../examples/TRI_SLIT.DAT
+                         # Location of slit function
+spline 300 340 1         # Interpolate from first to last in step
 
-    conda install notebook ipykernel
-    ipython kernel install
+quiet
+\end{lstlisting}
 
-See [here])https://github.com/NelisW/ComputationalRadiometry/blob/master/00-Installing-Python-pyradi.ipynb) for more detail.
+This input file yields the following output file (the details of which you can decipher from the \libradtran{} User Guide \cite{libRadTranUserGuide2019}):
 
+\begin{lstlisting}[style=tinysize]
+  300.000  2.763049e+00  3.087059e+00  1.170022e+00  2.592736e-01  4.777781e-01  1.862147e-01 
+  301.000  5.223602e+00  5.888303e+00  2.222381e+00  4.901621e-01  9.168083e-01  3.537029e-01 
+  302.000  6.212306e+00  7.024819e+00  2.647425e+00  5.829381e-01  1.098937e+00  4.213508e-01 
+  303.000  1.499798e+01  1.709326e+01  6.418247e+00  1.407351e+00  2.687637e+00  1.021496e+00 
+  304.000  1.731212e+01  1.968946e+01  7.400318e+00  1.624501e+00  3.108258e+00  1.177797e+00 
+  305.000  2.666450e+01  3.052658e+01  1.143822e+01  2.502091e+00  4.841135e+00  1.820449e+00 
+  306.000  2.714423e+01  3.094949e+01  1.161874e+01  2.547107e+00  4.925832e+00  1.849181e+00 
+  307.000  3.892420e+01  4.444759e+01  1.667436e+01  3.652493e+00  7.100925e+00  2.653807e+00 
+  308.000  4.928456e+01  5.616349e+01  2.108961e+01  4.624668e+00  9.003217e+00  3.356516e+00 
+  309.000  4.968203e+01  5.629452e+01  2.119531e+01  4.661965e+00  9.051084e+00  3.373338e+00 
+  310.000  5.282494e+01  5.981413e+01  2.252781e+01  4.956883e+00  9.651869e+00  3.585413e+00 
+  311.000  9.116537e+01  1.021252e+02  3.865812e+01  8.554597e+00  1.652179e+01  6.152631e+00 
+  312.000  8.539021e+01  9.519187e+01  3.611642e+01  8.012679e+00  1.544426e+01  5.748106e+00 
+  313.000  1.008859e+02  1.116138e+02  4.249995e+01  9.466736e+00  1.815837e+01  6.764078e+00 
+  314.000  1.140307e+02  1.247804e+02  4.776222e+01  1.070019e+01  2.035162e+01  7.601594e+00 
+  315.000  1.217260e+02  1.323822e+02  5.082165e+01  1.142229e+01  2.164887e+01  8.088517e+00 
+  316.000  1.001420e+02  1.074433e+02  4.151704e+01  9.396925e+00  1.761202e+01  6.607643e+00 
+  317.000  1.555369e+02  1.652335e+02  6.415407e+01  1.459496e+01  2.715088e+01  1.021044e+01 
+  318.000  1.362324e+02  1.430189e+02  5.585025e+01  1.278350e+01  2.355464e+01  8.888844e+00 
+  319.000  1.611656e+02  1.681876e+02  6.587064e+01  1.512314e+01  2.776797e+01  1.048364e+01 
+  320.000  1.788111e+02  1.816904e+02  7.210032e+01  1.677893e+01  3.006627e+01  1.147512e+01 
+  321.000  1.785449e+02  1.818189e+02  7.207275e+01  1.675394e+01  3.015396e+01  1.147073e+01 
+  322.000  1.869200e+02  1.855010e+02  7.448420e+01  1.753983e+01  3.083632e+01  1.185453e+01 
+  323.000  1.653979e+02  1.624324e+02  6.556606e+01  1.552028e+01  2.706200e+01  1.043516e+01 
+  324.000  2.089290e+02  2.038225e+02  8.255030e+01  1.960507e+01  3.403920e+01  1.313829e+01 
+  325.000  2.134198e+02  2.024978e+02  8.318353e+01  2.002647e+01  3.389131e+01  1.323907e+01 
+  326.000  2.853074e+02  2.686987e+02  1.108012e+02  2.677211e+01  4.507038e+01  1.763456e+01 
+  327.000  2.888047e+02  2.682587e+02  1.114127e+02  2.710029e+01  4.510012e+01  1.773188e+01 
+  328.000  2.730194e+02  2.472749e+02  1.040589e+02  2.561906e+01  4.166240e+01  1.656148e+01 
+  329.000  3.073699e+02  2.764369e+02  1.167614e+02  2.884237e+01  4.668488e+01  1.858315e+01 
+  330.000  3.460204e+02  3.062719e+02  1.304585e+02  3.246919e+01  5.183652e+01  2.076311e+01 
+  331.000  2.989884e+02  2.580901e+02  1.114157e+02  2.805589e+01  4.377979e+01  1.773236e+01 
+  332.000  3.145912e+02  2.690056e+02  1.167194e+02  2.951999e+01  4.573355e+01  1.857646e+01 
+  333.000  3.134522e+02  2.635762e+02  1.154057e+02  2.941311e+01  4.491315e+01  1.836738e+01 
+  334.000  3.062941e+02  2.523394e+02  1.117267e+02  2.874142e+01  4.309492e+01  1.778186e+01 
+  335.000  3.283018e+02  2.671566e+02  1.190917e+02  3.080654e+01  4.572950e+01  1.895403e+01 
+  336.000  2.771408e+02  2.219277e+02  9.981371e+01  2.600579e+01  3.807083e+01  1.588585e+01 
+  337.000  2.736382e+02  2.146446e+02  9.765657e+01  2.567713e+01  3.690510e+01  1.554253e+01 
+  338.000  3.155172e+02  2.437741e+02  1.118583e+02  2.960688e+01  4.200866e+01  1.780280e+01 
+  339.000  3.408671e+02  2.595133e+02  1.200761e+02  3.198561e+01  4.481992e+01  1.911070e+01 
+  340.000  3.823216e+02  2.855006e+02  1.335645e+02  3.587555e+01  4.941755e+01  2.125744e+01 
+\end{lstlisting}
+
+This newly-calculated output file differs somewhat from the reference output file \lstinline{UVSPEC_CLEAR.OUT} present in the \lstinline{examples} folder.  The differences are small (fifth decimal), in the third column.  This is within the allowable variance limit for testing the installation.
+
+\section{Status Review}
+
+After the above installation there is a running \libradtran{} version 2.0.3 running on the server. The next step is to set up Dask to use this server.

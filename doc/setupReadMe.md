@@ -1,4 +1,4 @@
-# Setup Procedure for libRadtranDask 
+# Setup Procedure for libradDask 
 
 ## Create the server account and software
 

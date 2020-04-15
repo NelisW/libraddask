@@ -3,12 +3,12 @@
 .ipynb_checkpoints/
 
 /doc/Report/*.aux
-/doc/Report/libRadtranDask.bbl
-/doc/Report/libRadtranDask.blg
-/doc/Report/libRadtranDask.fdb_latexmk
-/doc/Report/libRadtranDask.fls
-/doc/Report/libRadtranDask.lof
-/doc/Report/libRadtranDask.out
-/doc/Report/libRadtranDask.synctex
-/doc/Report/libRadtranDask.toc
-/doc/Report/libRadtranDask.tdo
+/doc/Report/libradDask.bbl
+/doc/Report/libradDask.blg
+/doc/Report/libradDask.fdb_latexmk
+/doc/Report/libradDask.fls
+/doc/Report/libradDask.lof
+/doc/Report/libradDask.out
+/doc/Report/libradDask.synctex
+/doc/Report/libradDask.toc
+/doc/Report/libradDask.tdo

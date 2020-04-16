@@ -23,7 +23,7 @@
  * Boston, MA 02111-1307, USA.
  *--------------------------------------------------------------------"""
  
- __all__ = ["FileInput", "FloatInput", "TextInput", "IntegerInput", "ListInput", "IntegerListInput", "BooleanInput", "VariableNumberOfLinesInput"]
+__all__ = ["FileInput", "FloatInput", "TextInput", "IntegerInput", "ListInput", "IntegerListInput", "BooleanInput", "VariableNumberOfLinesInput"]
 
 
 class Input():

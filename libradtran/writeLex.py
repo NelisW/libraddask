@@ -23,8 +23,8 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, 
  * Boston, MA 02111-1307, USA.
  *--------------------------------------------------------------------"""
-from . import option_definition
-from . import GUI_definition
+from libraddask.libradtran import option_definition
+from libraddask.libradtran import GUI_definition
 import io
 
 found_lidar     = "no"

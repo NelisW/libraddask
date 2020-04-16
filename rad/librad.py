@@ -2,7 +2,7 @@ __author__ = 'DGriffith'
 """
  *--------------------------------------------------------------------
  *
- * This file is part of MORTICIA.
+ * This file is part of libraddask, orginally from morticia .
  * Copyright (c) 2015-2016 by Derek Griffith and Ari Ramkiloawn
  *
  *
@@ -61,15 +61,20 @@ The relevant code here is taken from libRadtran version 2.0
 # TODO Dealing with exceptions, warnings. Keywords missing from the options library etc.
 # TODO dealing with setting of units based on whatever is known about inputs/outputs, thermal is W/m^2/cm^-1
 
-from . import writeLex  # This imports all the libradtran option definitions
+# from . import writeLex  # This imports all the libradtran option definitions
+# from . import writeLex  # This imports all the libradtran option definitions
+from libraddask.libradtran import writeLex
+
 import os
 import easygui  # For file open dialogs
 import numpy as np
 import xarray as xr
 import re
 import warnings
-from morticia.moglo import *
-from morticia.tools.xd import *
+
+from libraddask.rad import moglo
+from libraddask.rad import xd
+
 import copy
 from itertools import chain  #Used in RadEnv constructor
 import matplotlib.pyplot as plt
@@ -218,7 +223,7 @@ def lookup_nearest_in_file(filename, values_and_offsets, column_number=0):
     The following excample will fetch the Thuillier solar spectrum wavelengths that span the range of
     385 nm to 955 nm with a margin of 2 nm on either side. This is useful when setting the uspec 'wavelength'
     keyword, which must give wavelengths that are actually listed in the source solar sepctrum file.
-    >>> import morticia.rad.librad as librad
+    >>> import libraddask.rad.librad as librad
     >>> wavelengths  = librad.lookup_nearest_in_file('data/Solar_irradiance_Thuillier_2002.txt', [[385.0, -2.0], [955, 2.0]])
 
     """
@@ -379,7 +384,7 @@ class Case(object):
             Implement checking of uvspec input keyword tokens (parameters)
 
         >>> # Read a libRadtran/uvspec case from a .INP file and display the expanded input
-        >>> import morticia.rad.librad as librad
+        >>> import libraddask.rad.librad as librad
         >>> libRadCase = librad.Case(filename='./examples/UVSPEC_AEROSOL.INP')  # Read uvspec input and expand includes, if any
         >>> print(libRadCase)   # This prints the uvspec input file, compare to contents of UVSPEC_AEROSOL.INP
         atmosphere_file ../data/atmmod/afglus.dat
@@ -775,7 +780,7 @@ class Case(object):
 
         Example:
 
-        >>> import morticia.rad.librad as librad
+        >>> import libraddask.rad.librad as librad
         >>> libRadCase = librad.Case(casename='MyExample')  # Creates a blank libRadtran/uvspec case
         >>> libRadCase.set_option('source solar', '../data/solar_flux/atlas_plus_modtran')
         >>> libRadCase.set_option('wavelength', 300, 400)  # can provide literal numerics
@@ -1532,7 +1537,7 @@ class Case(object):
         # 'cpt', being cold-point tropopause is mapped to np.nan and toa maps to np.inf
 
 
-        # The most important output for MORTICIA is radiances (self.uu), so those get processed
+        # The most important output for librad is radiances (self.uu), so those get processed
         # first. This is a 5 dimensional numpy array with axes 'umu'. 'phi', 'wvl', 'zout' (or equivalent)
         # and 'stokes'. The 'wvl' axis could also be 'chn' (spectral channel) or 'wvn' (spectral wavenumber)
         # Create each of the axes individually using xd_identity
@@ -1672,7 +1677,7 @@ class RadEnv(object):
         This presents a problem for calculation of path transmission (optical depth) between output atmospheric
         levels (e.g. as specified by the uvspec `zout` keyword). This solver only produces total fluxes (irradiances)
         for each of desired stokes parameters. Hence for calculation of polarised radiant environment maps (REMs), the only
-        feasible option for `MORTICIA` is to use the `mystic` solver with the `mc_polarisation` option. Currently,
+        feasible option for `librad` is to use the `mystic` solver with the `mc_polarisation` option. Currently,
         the librad.Case uvspec output file reading functions do not cater for `mystic`.
 
     """
@@ -1692,7 +1697,7 @@ class RadEnv(object):
             outputs (i.e. should not use the `output_user` keyword). It should also not the use `output_process` or
             `output_quantity` keywords, which change the units and/or format of the libRadtran/uvspec output.
              Minimal validation of the basecase is performed. However, use with `mol_abs_param` such as `kato` and
-             `fu` is important for `MORTICIA` and these are supported (k-distribution or `correlated-k`
+             `fu` is important for `librad` and these are supported (k-distribution or `correlated-k`
              parametrizations). Use of `output_process per_nm` is appropriate for `source thermal` REMs to get
              radiance units per nanometre rather than per inverse cm.
         :param n_pol: Number of polar angles (view/propagation zenith angles)
@@ -1702,7 +1707,7 @@ class RadEnv(object):
         :param hemi: If set True, will generate only a single hemisphere being on one side of
             the solar principle plane. Default is False i.e. the environment map covers the full sphere.
             Note that if hemi=True, the number of REM samples in azimuth becomes n_azi :math:`\\times` 2.
-            This is the recommended mode (hemi=True) for MORTICIA purposes, since it reduces execution time.
+            This is the recommended mode (hemi=True) for librad purposes, since it reduces execution time.
         :param n_sza: The number of solar zenith angles (SZA) at which to perform transmittance and path radiance
             computations. Each SZA will result in another run of the base case (no radiances)
 
@@ -1732,7 +1737,7 @@ class RadEnv(object):
         For all one-dimensional solvers the absolute azimuth does not matter, but only the relative azimuth
         `phi` - `phi0`.
 
-        For `MORTICIA` work, it is strongly recommended that the `hemi` flag be set True. This will automatically
+        For `librad` work, it is strongly recommended that the `hemi` flag be set True. This will automatically
         set the `phi0` keyword to zero in the RadEnv cases when running uvspec. This will essentially halve the
         execution time for radiant environment maps of the same effective spatial resolution.
         """
@@ -1806,7 +1811,7 @@ class RadEnv(object):
     def setup_trans_cases(self, n_sza=32):
         """ Setup a list of cases for computing the transmission matrices between every level defined in the
         REM (and at every wavelength and stokes parameter combination). The computation of  transmittance between
-        levels is accomplished in `MORTICIA` using libRadtran/uvspec by computing the direct solar irradiance
+        levels is accomplished in `librad` using libRadtran/uvspec by computing the direct solar irradiance
         transmittance for multiple zenith angles.
 
         Note that if there is an optically thick cloud layer between two levels in the REM, the transmittance
@@ -1846,7 +1851,7 @@ class RadEnv(object):
         Execution and attribution of transmittance cases will provide each level with transmittance to the level
         above that altitude level. Therefore the topmost level will have transmittances to TOA, but the
         bottom level will not have transmittances (optical depths) to BOA, unless the bottom level *is* BOA.
-        It is recommended that all MORTICIA base cases for REM include BOA as an output level.
+        It is recommended that all librad base cases for REM include BOA as an output level.
 
         :param n_sza: The number of solar zenith angles at which to compute path optical depth and radiances.
              the SZA values are computed equi-spaced in the cosine of the solar zenith angle rather that the
@@ -2344,7 +2349,7 @@ class RadEnv(object):
             display purposes when the REM has no azimuthal variation (e.g. in the thermal bands).
         :param use_mitsuba_wvl: Boolean. If set True, write channels using the Mitsuba wavelength assignments i.e.
             remap wavelengths to the 360 nm to 830 nm range. Setting this flag True will also scale the radiance
-            values to W/m^2/sr/nm, which are the canonical units for Mitsuba rendering in the context of MORTICIA.
+            values to W/m^2/sr/nm, which are the canonical units for Mitsuba rendering in the context of MORTIlibradCIA.
 
         Notes
         -----
@@ -2414,7 +2419,7 @@ class RadEnv(object):
                 # Generate the file header
                 theheader = OpenEXR.Header(datashape[1] * repeat_azi, datashape[0])
                 # Add some metadata
-                theheader['generatedBy'] = 'morticia.rad.librad'
+                theheader['generatedBy'] = 'libraddask.rad.librad'
                 theheader['zout'] = str(zout_value)
                 theheader['zout_units'] = 'km'
                 theheader['rad_units'] = rad_units
@@ -2484,7 +2489,7 @@ class HyperRadEnv(RadEnv):
             outputs (i.e. should not use the `output_user` keyword). It should also not the use `output_process` or
             `output_quantity` keywords, which change the units and/or format of the libRadtran/uvspec output.
              Minimal validation of the basecase is performed. However, use with `mol_abs_param` such as `kato` and
-             `fu` is important for `MORTICIA` and these are supported (k-distribution or `correlated-k`
+             `fu` is important for `librad` and these are supported (k-distribution or `correlated-k`
              parametrizations). Use of `output_process per_nm` is appropriate for `source thermal` REMs to get
              radiance units per nanometre rather than per inverse cm.
         :param n_pol: Number of polar angles (view/propagation zenith angles)
@@ -2500,7 +2505,7 @@ class HyperRadEnv(RadEnv):
         :param hemi: If set True, will generate only a single hemisphere being on one side of
             the solar principle plane. Default is False i.e. the environment map covers the full sphere.
             Note that if hemi=True, the number of REM samples in azimuth becomes n_azi :math:`\\times` 2.
-            This is the recommended mode (hemi=True) for MORTICIA purposes, since it reduces execution time.
+            This is the recommended mode (hemi=True) for librad purposes, since it reduces execution time.
         :param n_sza: The number of solar zenith angles (SZA) at which to perform transmittance and path radiance
             computations. Each SZA will result in another run of the base case (no radiances)
 

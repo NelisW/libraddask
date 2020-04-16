@@ -72,8 +72,10 @@ import xarray as xr
 import re
 import warnings
 
-from libraddask.rad import moglo
-from libraddask.rad import xd
+# from libraddask.rad import xd 
+# import xd
+# from libraddask import xd 
+import libraddask.rad.xd as xd
 
 import copy
 from itertools import chain  #Used in RadEnv constructor
@@ -642,12 +644,12 @@ class Case(object):
         if keyword == 'umu':
             self.n_umu = len(tokens)  # The number of umu values
             self.umu = np.array(tokens).astype(np.float64)
-            self.pza = xd_identity(np.arccos(self.umu), 'pza', 'rad')
-            self.paz = xd_identity(np.deg2rad(self.phi), 'paz', 'rad')
+            self.pza = xd.xd_identity(np.arccos(self.umu), 'pza', 'rad')
+            self.paz = xd.xd_identity(np.deg2rad(self.phi), 'paz', 'rad')
         if keyword == 'phi':
             self.n_phi = len(tokens)
             self.phi = np.array(tokens).astype(np.float64)
-            self.paz = xd_identity(np.deg2rad(self.phi), 'paz', 'rad')
+            self.paz = xd.xd_identity(np.deg2rad(self.phi), 'paz', 'rad')
         if keyword == 'output_user':
             self.output_user = [token.replace('lambda', 'wvl') for token in tokens]  # lambda is a keyword
             self.output_user = [token.replace('wavenumber', 'wvn') for token in self.output_user]  # abbreviate wavenumber
@@ -1526,7 +1528,7 @@ class Case(object):
         return self
 
     def process_outputs(self):
-        """ Process outputs from libRadtran into moglo.Scalar and xr.DataArray objects.
+        """ Process outputs from libRadtran into xd.Scalar and xr.DataArray objects.
         Currently only radiance outputs are processed, along with a few typical flux outputs, such as `edir`.
 
         Note that this method probably does not cover all libRadtran/uvspec inputs and outputs and will most
@@ -1540,29 +1542,29 @@ class Case(object):
         # The most important output for librad is radiances (self.uu), so those get processed
         # first. This is a 5 dimensional numpy array with axes 'umu'. 'phi', 'wvl', 'zout' (or equivalent)
         # and 'stokes'. The 'wvl' axis could also be 'chn' (spectral channel) or 'wvn' (spectral wavenumber)
-        # Create each of the axes individually using xd_identity
+        # Create each of the axes individually using xd.xd_identity
         # TODO : Also include putting irradiance or other user output into xr.DataArray objects
         # TODO : Want to deal with azimuthally averaged radiances as well if possible (to xr.DataArray)
         # Azimuthally averaged radiances occur when phi is not specified
         # Set up sepctral axis, output level axis and stokes component axis
         if self.spectral_axis == 'wvl':
-            spectral_axis = xd_identity(self.wvl, 'wvl','nm')  # The spectral axis is wavelength
+            spectral_axis = xd.xd_identity(self.wvl, 'wvl','nm')  # The spectral axis is wavelength
         elif self.spectral_axis == 'wvn':
-            spectral_axis = xd_identity(self.wvn, 'wvn', 'cm^-1')  # The spectral axis is wavenumber
+            spectral_axis = xd.xd_identity(self.wvn, 'wvn', 'cm^-1')  # The spectral axis is wavenumber
         elif self.spectral_axis == 'chn':  # The spectral axis is channel number
             if np.any(self.wvl):
-                spectral_axis = xd_identity(self.wvl, 'wvl','nm')
+                spectral_axis = xd.xd_identity(self.wvl, 'wvl','nm')
             elif np.any(self.wvn):
-                spectral_axis = xd_identity(self.wvn, 'wvn', 'cm^-1')
+                spectral_axis = xd.xd_identity(self.wvn, 'wvn', 'cm^-1')
         else:
-            spectral_axis = xd_identity(np.nan, 'unknown', 'unknown')  # Don't know what is going on, so just put in something
-        levels = xd_identity(self.level_values, self.levels_out_type)  # Presume units correct
+            spectral_axis = xd.xd_identity(np.nan, 'unknown', 'unknown')  # Don't know what is going on, so just put in something
+        levels = xd.xd_identity(self.level_values, self.levels_out_type)  # Presume units correct
         self.levels = levels
-        stokes = xd_identity(range(self.n_stokes), 'stokes')
+        stokes = xd.xd_identity(range(self.n_stokes), 'stokes')
         self.stokes = stokes
         # Convert uu radiance output to xr.DataArray
         if self.uu.size:  # OK, there is some radiance data (not azimuthally averaged)
-            umu = xd_identity(self.umu, 'umu', '')  # TODO : This must change to the propagation zenith (polar) angle
+            umu = xd.xd_identity(self.umu, 'umu', '')  # TODO : This must change to the propagation zenith (polar) angle
             paz = self.paz
             pza = self.pza
             phi = self.phi
@@ -1592,7 +1594,7 @@ class Case(object):
                     warnings.warn('Non-singleton third dimension encountered in scalar flux data.')
                 try:
                     xd_flux = xr.DataArray(getattr(self, flux_field), [spectral_axis, levels], name=flux_field,
-                                         attrs={'units': flux_units, 'long_name': long_name[flux_field]})
+                                         attrs={'units': flux_units, 'long_name': xd.long_name[flux_field]})
                     setattr(self, 'xd_' + flux_field, xd_flux)
                 except:
                     warnings.warn('Unable to convert flux data to xarray.')
@@ -1793,12 +1795,12 @@ class RadEnv(object):
         self.n_pol = n_pol
         self.n_azi_batch = n_azi_batch
         self.n_pol_batch = n_pol_batch
-        self.phi = xd_identity(prop_azi_angles, 'phi', 'deg')
-        self.umu = xd_identity(umu, 'umu', '')
-        self.pza = xd_identity(prop_zen_angles, 'pza', 'rad')
-        self.paz = xd_identity(np.deg2rad(prop_azi_angles), 'paz', 'rad')
-        self.vza = xd_identity(view_zen_angles, 'vza', 'deg')
-        self.vaz = xd_identity(view_azi_angles, 'vaz', 'deg')
+        self.phi = xd.xd_identity(prop_azi_angles, 'phi', 'deg')
+        self.umu = xd.xd_identity(umu, 'umu', '')
+        self.pza = xd.xd_identity(prop_zen_angles, 'pza', 'rad')
+        self.paz = xd.xd_identity(np.deg2rad(prop_azi_angles), 'paz', 'rad')
+        self.vza = xd.xd_identity(view_zen_angles, 'vza', 'deg')
+        self.vaz = xd.xd_identity(view_azi_angles, 'vaz', 'deg')
         self.has_water_clouds = self.base_case.has_water_clouds
         self.has_ice_clouds = self.base_case.has_ice_clouds
         self.has_clouds = self.base_case.has_clouds
@@ -1897,7 +1899,7 @@ class RadEnv(object):
         rem_pza_limit = np.pi/2.0 - 0.99 * (np.abs(self.pza[1].data - self.pza[0]))/2.0
         if vpa_up[-1] < rem_pza_limit:
             vpa_up = np.hstack((vpa_up, rem_pza_limit))
-        self.trans_vza_up = xd_identity(vpa_up, 'vza', 'rad')
+        self.trans_vza_up = xd.xd_identity(vpa_up, 'vza', 'rad')
         # Now build a list of uvspec runs, based on trans_base_case
         # The list is called trans_cases
         self.trans_cases = []
@@ -2240,7 +2242,7 @@ class RadEnv(object):
         # This is not a "harmonisation" interpolation. The transmission grid is being interpolated
         # onto another grid in pza (propagation zenith angle)
         # TODO : Check out reliability of using quadratic/cubic interpolation for transmittance
-        self.xd_trans_toa = xd_interp_axis_to(self.xd_edir_trans, self.xd_uu, axis='pza', interp_method='linear',
+        self.xd_trans_toa = xd.xd_interp_axis_to(self.xd_edir_trans, self.xd_uu, axis='pza', interp_method='linear',
                                               fill_value=1.0, assume_sorted=False)
         self.xd_opt_depth = -np.log(self.xd_trans_toa)  # Compute the optical depths from a level to TOA
         # Subtract the optical depth of the level above it.
@@ -2511,3 +2513,8 @@ class HyperRadEnv(RadEnv):
 
 
         """
+
+
+def mytest():
+    
+    xxxx = xd.xd_identity(np.linspace(0,1,10), 'vza', 'rad')

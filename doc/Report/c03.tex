@@ -31,7 +31,7 @@ See also
 \cite{libRadtran2005,libRadTranUserGuide2012,libRadtranDownload2020,libRadtranmuenchen2020}.
 
 
-\section{Building \libradtran{}}
+\section{Obtaining and Building \libradtran{}}
 
 \subsection{System Reference}
 For reference purposes this installation was done on the following Linux system: Debian 4.9.110, running the 4.9.0-8-amd64 Linux kernel.
@@ -40,6 +40,11 @@ For reference purposes this installation was done on the following Linux system:
 Linux servername 4.9.0-8-amd64 #1 SMP Debian 4.9.110-3+deb9u6 (2018-10-08) x86_64 GNU/Linux
 \end{lstlisting}
 
+\subsection{Downloading  \libradtran{}}
+
+Download \libradtran{} and the optional additional files/modules from\\
+\lstinline{http://www.libradtran.org/doku.php?id=download}\\
+For our application the REPTRAN absorption parameterization data was required, but it may differ between different sites.
 
 
 \subsection{Create the server account and software}
@@ -279,4 +284,4 @@ This newly-calculated output file differs somewhat from the reference output fil
 
 \section{Status Review}
 
-After the above installation there is a running \libradtran{} version 2.0.3 running on the server. The next step is to set up Dask to use this server.
+After the above installation there is a running \libradtran{} version 2.0.3 running on the server. The next step is to set up Dask to use this server. 

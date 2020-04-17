@@ -841,7 +841,7 @@ distributed.core - INFO - Starting established connection
 
 You can also define the number of processors to be used and the threads per processor, see \\ https://stackoverflow.com/questions/49406987/how-do-we-choose-nthreads-and-nprocs-per-worker-in-dask-distributed\\
 
-By default Dask creates a single process with as many threads as you have logical cores on your machine (as determined by multiprocessing.cpu_count()).
+By default Dask creates a single process with as many threads as you have logical cores on your machine (as determined by \lstinline{multiprocessing.cpu_count()}).
 \begin{lstlisting}
 dask-worker ... --nprocs 1 --nthreads 8  # assuming you have eight cores
 dask-worker ...                          # this is actually the default setting

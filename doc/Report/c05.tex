@@ -4,6 +4,7 @@
 \chapter{Server User Manual}
 \label{chap:ServerUserManual}
 
+\begin{lstlisting}
 
 ## Running libRadtran
 
@@ -123,3 +124,20 @@ The instructions here describe the use of the OSS nimbus server (146.64.246.94).
 If the libRadtran execution was successful the tasks should complete and the data returned to the client.
 
 
+\section{Jupyter Notebook Template}
+
+
+
+import libraddask.rad.librad as librad
+
+from dask.distributed import Client # For contacting the dask scheduler
+
+serverusername = '146.64.246.94:8786'
+
+# dask Client method with scheduler IP and port
+paraclient = Client(serverusername)
+
+futureRadBatch = paraclient.map(librad.Case.run, [S3, S3b])
+# Gather results. This will wait for completion of all tasks.
+S3List = paraclient.gather(futureRadBatch)  
+\end{lstlisting}

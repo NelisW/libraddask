@@ -1632,8 +1632,9 @@ class Case(object):
             caselist = [copy.deepcopy(self) for icase in range(int(n_sub_ranges))]
             # Now run through the cases and set the wavelength sub-ranges
             for i_split, this_case in enumerate(caselist):
-                this_case.set_option('wavelength', wvl_splits[i_split] - overlap * np.sign(np.float(i_split)),
-                                     wvl_splits[i_split + 1])
+                minVal = round(wvl_splits[i_split] - overlap * np.sign(np.float(i_split)),1)
+                maxVal = round(wvl_splits[i_split + 1],1)
+                this_case.set_option('wavelength', minVal, maxVal)
                 this_case.name += '{:04d}'.format(i_split)  # really important to change the name to avoid clashes at runtime
             return caselist
         else:
@@ -1663,6 +1664,20 @@ class Case(object):
         wvl_merged, merge_indices = np.unique(wvl_merged, return_index=True)
         data_merged = data_merged[merge_indices, ...]
         return np.vstack(wvl_merged), data_merged
+
+
+# Create function to check on success of a list of libRadtran/uvspec runs
+# Just raise a runtime error if any of the runs has failed.
+def check_uvspec_run_success(runlist):
+    run_return_codes = [case.run_return_code for case in runlist]
+    # Print standard error outputs for failed runs
+    if any(run_return_codes):
+        print('One or more libRadtran/uvspec runs failed. ')
+        print('Please review standard error output.')
+        print([case.stderr for case in runlist if case.run_return_code])
+        raise RuntimeError('One or more libRadtran/uvspec runs failed')
+    else:
+        print('All runs successful.' )
 
 
 class RadEnv(object):

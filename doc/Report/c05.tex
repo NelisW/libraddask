@@ -4,140 +4,372 @@
 \chapter{Server User Manual}
 \label{chap:ServerUserManual}
 
+\section{libraddask Template for Radiative Transfer}
+\label{sec:libraddaskTemplateforRadiativeTransfer}
+
+This notebook demonstrates the use of the libraddask library.
+The notebook  is available in the \lstinline{/libraddask/doc} folder as 
+(\lstinline{libraddaskTemplate.ipynb}).
+
+It calculates the radiative transfer calculations for the Sentinel 3 overpass over
+Roodeplaat (\ang{25;37;29}S, \ang{28;21;39}E) on Sunday 2016-06-05.
+
+
+
+\section{Running libRadtran}
+\label{sec:RunninglibRadtran}
+
+\begin{enumerate}
+\item If working off-site, use a VPN client to connect to the same network as used by the server.  Dask requires that your local PC must have an IP number in the same subnetwork as the server.  Some VPNs do not provide an IP number on the same subnetwork and such VPN clients will not work with Dask.
+\item Using a remote terminal client on your local computer, open three terminal windows on the server:
+
+\begin{itemize}
+\item a  terminal for general use,
+\item a terminal for the Dask scheduler, and
+\item a terminal for the Dask workers.
+\end{itemize}
+\item In the scheduler terminal activate the conda environment with the Dask packages and then start the scheduler.
+
 \begin{lstlisting}
-
-## Running libRadtran
-
-### Additional data files
- 
-The libRadtran run below assumes that the following files are present in the version of libRadtran run. The text files must have Linux line endings.
-
-    examples/moltauKLines56fa5f13.nc
-    data/solar_flux/kurucz_full_749nm_770nm.dat
-    data/solar_flux/kurucz_full_757nm_773nm.dat
-    data/solar_flux/kurucz_full_760nm_777nm.dat
-
-### ipyparallel
-
-It is proposed to rather use Dask.
-
-### Dask
-
-Setting up the Dask environment on the nimbus server requires the following steps
-
-See the libraddask report for instructions on how to set up the server environment: installing libRadtran and Python with dask.
-
-The instructions here describe the use of the OSS nimbus server (146.64.246.94).
-
-1. If working off-site, use a VPN client to connect to the same network as used by the server.  Dask requires that your local PC must have an IP number in the same subnetwork as the server.  Some VPNs do not provide an IP number on the same subnetwork and such VPN clients will not work with Dask.
-
-1. Using a remote terminal client, open three terminal windows on the server: (1) a  terminal for general use, (2) a terminal for the Dask scheduler, and (3) a terminal for the Dask workers.
-
-1. In the scheduler terminal activate the conda environment with the Dask packages and then start the scheduler.
-
-        conda activate mordevpy37
-        dask-scheduler
-        
-   This should start the scheduler:
+conda activate mordevpy37
+dask-scheduler
+\end{lstlisting}
+The scheduler responds with something like this:
+\begin{lstlisting}[style=tinysize]
+(base) dgriffith@nimbus:~$ conda activate mordevpy37        
+(mordevpy37) dgriffith@nimbus:~$ dask-scheduler
+distributed.scheduler - INFO - -----------------------------------------------
+distributed.scheduler - INFO - Local Directory:    /tmp/scheduler-ay08oqkc
+distributed.scheduler - INFO - -----------------------------------------------
+distributed.scheduler - INFO - Clear task state
+distributed.scheduler - INFO -   Scheduler at:  tcp://146.64.246.94:8786
+distributed.scheduler - INFO -   dashboard at:                     :8787
+\end{lstlisting}
    
-        (base) dgriffith@nimbus:~$ conda activate mordevpy37
-        (mordevpy37) dgriffith@nimbus:~$ dask-scheduler
-        distributed.scheduler - INFO - -----------------------------------------------
-        distributed.scheduler - INFO - Local Directory:    /tmp/scheduler-ay08oqkc
-        distributed.scheduler - INFO - -----------------------------------------------
-        distributed.scheduler - INFO - Clear task state
-        distributed.scheduler - INFO -   Scheduler at:  tcp://146.64.246.94:8786
-        distributed.scheduler - INFO -   dashboard at:                     :8787
+Observe the scheduler URI: \lstinline{tcp://146.64.246.94:8786}, this must be used in the next step to set up the workers.
 
-    Observe the scheduler URI: `tcp://146.64.246.94:8786`, this must be used in the next step to set up the workers.
-    
-1. In the worker terminal change to the `bin` folder in the libRadtran installation folder and activate the conda environment with the Dask packages and then start the worker, using the scheduler URI and setting the required number of processors on the cluster :
+\item 
+In the worker terminal change to the \verb+bin+ folder in the libRadtran installation folder and activate the conda environment with the Dask packages and then start the worker, using the scheduler URI and setting the required number of processors on the cluster :
+\begin{lstlisting}
+cd libRadtran/libRadtran-2.0.3/bin    
+conda activate mordevpy37    
+dask-worker tcp://146.64.246.94:8786 --nprocs 8
+\end{lstlisting}
+This should start eight workers, each with a different port number (not all detail shown below):
+\begin{lstlisting}[style=tinysize]
+(base) dgriffith@nimbus:~$ cd libRadtran/libRadtran\-2\.0\.3/bin        
+(base) dgriffith@nimbus:~/libRadtran/libRadtran\-2\.0\.3/bin$ conda activate mordevpy37
+(mordevpy37) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3/bin$ dask-worker tcp://146.64.246.94:8786 --nprocs 8
+distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:33671'
+distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:46725'
+distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:42509'
+distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:42983'
+distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:43735'
+distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:36947'
+distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:40075'
+distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:40495'
+...
+distributed.worker - INFO -       Start worker at:  tcp://146.64.246.94:36533
+distributed.worker - INFO -          Listening to:  tcp://146.64.246.94:36533
+distributed.worker - INFO -          dashboard at:        146.64.246.94:43069
+distributed.worker - INFO - Waiting to connect to:   tcp://146.64.246.94:8786
+distributed.worker - INFO - -------------------------------------------------
+distributed.worker - INFO -               Threads:                          4
+distributed.worker - INFO -                Memory:                    4.21 GB
+distributed.worker - INFO -       Local Directory: /home/dgriffith/libRadtran/libRadtran-2.0.3/bin/dask-worker-space/worker-_0o0qta1
+distributed.worker - INFO - -------------------------------------------------
+distributed.worker - INFO -         Registered to:   tcp://146.64.246.94:8786
+distributed.worker - INFO - -------------------------------------------------
+distributed.core - INFO - Starting established connection
+...
+distributed.worker - INFO -       Start worker at:  tcp://146.64.246.94:46597
+distributed.worker - INFO -          Listening to:  tcp://146.64.246.94:46597
+distributed.worker - INFO -          dashboard at:        146.64.246.94:33737
+distributed.worker - INFO - Waiting to connect to:   tcp://146.64.246.94:8786
+distributed.worker - INFO - -------------------------------------------------
+distributed.worker - INFO -               Threads:                          4
+distributed.worker - INFO -                Memory:                    4.21 GB
+distributed.worker - INFO -       Local Directory: /home/dgriffith/libRadtran/libRadtran-2.0.3/bin/dask-worker-space/worker-n0anjq00
+distributed.worker - INFO - -------------------------------------------------
+distributed.core - INFO - Starting established connection
+distributed.worker - INFO -         Registered to:   tcp://146.64.246.94:8786
+distributed.worker - INFO - -------------------------------------------------
+distributed.core - INFO - Starting established connection
+\end{lstlisting}
+\item Run the code that activates the client in the local PC (see the code further down below). This should send the serialised data to the scheduler:
+\begin{lstlisting}[style=tinysize]
+distributed.scheduler - INFO - Register worker <Worker 'tcp://146.64.246.94:33437', name: tcp://146.64.246.94:33437, memory: 0, processing: 0>
+distributed.scheduler - INFO - Starting worker compute stream, tcp://146.64.246.94:33437
+distributed.core - INFO - Starting established connection
+distributed.scheduler - INFO - Receive client connection: Client-1ed95fc0-8076-11ea-8700-cfd8862f98eb
+distributed.core - INFO - Starting established connection
+distributed.scheduler - INFO - Receive client connection: Client-27b067b0-8076-11ea-8700-cfd8862f98eb
+distributed.core - INFO - Starting established connection
+\end{lstlisting}
+The scheduler will send the serialised data to the workers, which will execute the tasks:
+\begin{lstlisting}[style=tinysize]
+Running AerAng600to900nm
+Running AerAng650to800nm
+\end{lstlisting}
 
-        cd libRadtran/libRadtran-2.0.3/bin    
-        conda activate mordevpy37    
-        dask-worker tcp://146.64.246.94:8786    
-        
-    This should start the workers, each with a different port number (not all detail shown):
-    
-        (base) dgriffith@nimbus:~$ cd libRadtran/libRadtran-2.0.3/bin
-        (base) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3/bin$ conda activate mordevpy37
-        (mordevpy37) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3/bin$ dask-worker tcp://146.64.246.94:8786 --nprocs 8
-        distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:33671'
-        distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:46725'
-        distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:42509'
-        distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:42983'
-        distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:43735'
-        distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:36947'
-        distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:40075'
-        distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:40495'
-        ...
-        distributed.worker - INFO -       Start worker at:  tcp://146.64.246.94:36533
-        distributed.worker - INFO -          Listening to:  tcp://146.64.246.94:36533
-        distributed.worker - INFO -          dashboard at:        146.64.246.94:43069
-        distributed.worker - INFO - Waiting to connect to:   tcp://146.64.246.94:8786
-        distributed.worker - INFO - -------------------------------------------------
-        distributed.worker - INFO -               Threads:                          4
-        distributed.worker - INFO -                Memory:                    4.21 GB
-        distributed.worker - INFO -       Local Directory: /home/dgriffith/libRadtran/libRadtran-2.0.3/bin/dask-worker-space/worker-_0o0qta1
-        distributed.worker - INFO - -------------------------------------------------
-        distributed.worker - INFO -         Registered to:   tcp://146.64.246.94:8786
-        distributed.worker - INFO - -------------------------------------------------
-        distributed.core - INFO - Starting established connection
-        ...
-        distributed.worker - INFO -       Start worker at:  tcp://146.64.246.94:46597
-        distributed.worker - INFO -          Listening to:  tcp://146.64.246.94:46597
-        distributed.worker - INFO -          dashboard at:        146.64.246.94:33737
-        distributed.worker - INFO - Waiting to connect to:   tcp://146.64.246.94:8786
-        distributed.worker - INFO - -------------------------------------------------
-        distributed.worker - INFO -               Threads:                          4
-        distributed.worker - INFO -                Memory:                    4.21 GB
-        distributed.worker - INFO -       Local Directory: /home/dgriffith/libRadtran/libRadtran-2.0.3/bin/dask-worker-space/worker-n0anjq00
-        distributed.worker - INFO - -------------------------------------------------
-        distributed.core - INFO - Starting established connection
-        distributed.worker - INFO -         Registered to:   tcp://146.64.246.94:8786
-        distributed.worker - INFO - -------------------------------------------------
-        distributed.core - INFO - Starting established connection
-
-
-1. Run the code that activates the client in the local PC (see below). This should send the serialised data to the scheduler:
-
-        distributed.scheduler - INFO - Register worker <Worker 'tcp://146.64.246.94:33437', name: tcp://146.64.246.94:33437, memory: 0, processing: 0>
-        distributed.scheduler - INFO - Starting worker compute stream, tcp://146.64.246.94:33437
-        distributed.core - INFO - Starting established connection
-        distributed.scheduler - INFO - Receive client connection: Client-1ed95fc0-8076-11ea-8700-cfd8862f98eb
-        distributed.core - INFO - Starting established connection
-        distributed.scheduler - INFO - Receive client connection: Client-27b067b0-8076-11ea-8700-cfd8862f98eb
-        distributed.core - INFO - Starting established connection
-
-    The scheduler will send the serialised data to the workers, which will execute the tasks:
-    
-        distributed.core - INFO - Event loop was unresponsive in Worker for 1.29s.  This is often caused by long-running GIL-holding functions or moving large chunks of data. This can cause timeouts and instability.
-        Current working directory: "/home/dgriffith/libRadtran/libRadtran-2.0.3/bin"
-        Current working directory: "/home/dgriffith/libRadtran/libRadtran-2.0.3/bin"
-        distributed.core - INFO - Event loop was unresponsive in Worker for 1.20s.  This is often caused by long-running GIL-holding functions or moving large chunks of data. This can cause timeouts and instability.
-        Current working directory: "/home/dgriffith/libRadtran/libRadtran-2.0.3/bin"
-        distributed.core - INFO - Event loop was unresponsive in Worker for 1.21s.  This is often caused by long-running GIL-holding functions or moving large chunks of data. This can cause timeouts and instability.
-        Current working directory: "/home/dgriffith/libRadtran/libRadtran-2.0.3/bin"
-
-
-        
+\end{enumerate}
 If the libRadtran execution was successful the tasks should complete and the data returned to the client.
 
-
-\section{Jupyter Notebook Template}
-
+\section{Prepare for Python}
 
 
-import libraddask.rad.librad as librad
+\begin{lstlisting}[style=tinysize]
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import datetime
+import pytz
 
 from dask.distributed import Client # For contacting the dask scheduler
+import libraddask.rad.librad as librad
 
-serverusername = '146.64.246.94:8786'
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
 
-# dask Client method with scheduler IP and port
-paraclient = Client(serverusername)
+%matplotlib inline
+\end{lstlisting}
 
-futureRadBatch = paraclient.map(librad.Case.run, [S3, S3b])
+
+\section{Set up a Scenario or Case}
+\label{sec:SetupaScenarioorCase}
+
+Populate an instance of the \verb+librad.Case+ class.
+
+
+Note that this code will be executed in the\\
+\verb+/home/dgriffith/libRadtran/libRadtran-2.0.3/bin/+\\
+folder, so the paths must be relative to this executing location.  The paths defined here has no bearing to any folder on the local computer.
+
+
+
+\begin{lstlisting}[style=tinysize]
+# Create a blank libRadtran case
+
+S3 = librad.Case(casename='AerAng600to900nm')
+
+# Set revision
+revision = '00A'
+
+# Choose basic atmospheric profile
+atmos_profile = '../data/atmmod/afglmw.dat'
+S3.set_option('atmosphere_file', atmos_profile)  # mid-latitude winter standard atmosphere
+
+# Change to the Thuillier spectrum and set wavelength range appropriately
+solar_toa_file = '../data/solar_flux/Solar_irradiance_Thuillier_2002.txt'
+solar_toa_file = '../data/solar_flux/kurudz_1.0nm.dat'
+
+# Choose start and stop wavelengths and minimum edge margin in nm
+wv_minimum_range = [[385.0, -2.0], [955.0, 2.0]]
+S3.set_option('source solar', solar_toa_file)
+S3.set_option('wavelength', 600.0, 900.0)
+
+# Set up dates and times
+overpass_datetime = datetime.datetime(2016, 6, 5, 7, 42, 31, tzinfo=pytz.utc)  # Overpass date and time down to second
+overpass_datestr = overpass_datetime.strftime('%Y%m%d')
+# Get the day of year
+day_of_year = int(overpass_datetime.strftime('%j'))
+
+results_folder = 'ResultsS3on' + overpass_datestr + 'Rev' + revision
+
+# Choose solver
+S3.set_option('rte_solver disort')
+
+# Set ground altitude
+S3.set_option('altitude', 1.225)  # ground altitude in km above sea level
+
+# Set ground albedo
+S3.set_option('albedo 0.5')
+
+# Set up aerosol model
+S3.set_option('aerosol_default')
+aot_wv = np.array([440, 500, 675, 870], dtype=np.float)  # MicroTOPS measurement wavelengths
+aot = np.array([0.703, 0.615, 0.362, 0.206])  # MicroTOPS measurements
+# Fit Angstrom law to data
+alpha, beta = librad.angstrom_law_fit(aot_wv, aot)
+# Fit King Byrne formula
+alpha_0, alpha_1, alpha_2 = librad.king_byrne_formula_fit(aot_wv, aot)
+S3.set_option('aerosol_angstrom', alpha, beta)
+
+# Set up viewing and solar geometry. Note that these angles are taken from the S3 product and special
+# care has to be taken when putting geometry information into libRadtran
+OAA = 104.01066  # deg. Observation azimuth angle (presumably relative to north through east, satellite from dam)
+OZA = 14.151356  # deg. Observation zenith angle (satellite zenith angle as seen from the dam)
+SAA = 38.719933  # deg. Solar azimuth angle (presumably relative to north through east)
+SZA = 59.316036  # deg. Solar zenith angle
+
+S3.set_option('sza', SZA)  # deg. This one is straightforward
+# Now when entering solar and observation zenith angles, it is necessary to provide the azimuth of light propagation
+# rather than the azimuth of the view direction, which is 180 deg different
+#S3.set_option('phi0', 180.0 - SAA)  # solar radiation propagation azimuth from north through east
+#S3.set_option('phi', OAA)  # This is the azimuth of the satellite as seen from the target - also azimuth of light propgation
+#S3.set_option('umu', np.cos(np.deg2rad(OZA))) # For downward-looking (upward propagating), check that umu is positive
+
+S3.set_option('verbose')  # Will produce a lot of diagnostic output on stderr
+
+#S3.set_option('zout boa')  # Set altitude of output data
+S3.purge = False  # Prevent purging of output files
+
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+print(S3)
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=outcellstyle]
+atmosphere_file ../data/atmmod/afglmw.dat
+source solar ../data/solar_flux/kurudz_1.0nm.dat
+wavelength 600.0 900.0
+rte_solver disort
+altitude 1.225
+albedo 0.5
+aerosol_default 
+aerosol_angstrom 1.6848887536371142 0.18175118840581214
+sza 59.316036
+verbose 
+
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+# To copy a case it is necessary to use the deepcopy operation
+# If you use S3b = S3, both variables point to the same copy
+import copy
+S3b = copy.deepcopy(S3)
+#S3b.name = 'S3toTOAon20160605b'
+S3b.name = 'AerAng650to800nm'
+S3b.set_option('wavelength', 650.0, 800.0)
+# S3b.set_option('aerosol_visibility', 5.0)
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+S3b
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=outcellstyle]
+atmosphere_file ../data/atmmod/afglmw.dat
+source solar ../data/solar_flux/kurudz_1.0nm.dat
+wavelength 650.0 800.0
+rte_solver disort
+altitude 1.225
+albedo 0.5
+aerosol_default 
+aerosol_angstrom 1.6848887536371142 0.18175118840581214
+sza 59.316036
+verbose 
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+#  dask Client method with scheduler serverURI (IP and port)
+serverURI = '146.64.246.94:8786'
+client = Client(serverURI)
+
+number_of_processes = len(client.scheduler_info()['workers'])
+print(f'Number of workers: {number_of_processes}')
+print(f'Client cores: {client.ncores()} ')
+
+# pp.pprint(client.get_versions(check=True))
+
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=outcellstyle]
+Number of workers: 8
+Client cores: {'tcp://146.64.246.94:34141': 4, 'tcp://146.64.246.94:34371': 4, 'tcp://146.64.246.94:36467': 4, 'tcp://146.64.246.94:38881': 4, 'tcp://146.64.246.94:38989': 4, 'tcp://146.64.246.94:40421': 4, 'tcp://146.64.246.94:41607': 4, 'tcp://146.64.246.94:43819': 4} 
+
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+# do a run on the server
+futuresRad = client.map(librad.Case.run, [S3, S3b])
 # Gather results. This will wait for completion of all tasks.
-S3List = paraclient.gather(futureRadBatch)  
+S3List = client.gather(futuresRad)    
+
+# check the return values
+librad.check_uvspec_run_success(S3List)
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=outcellstyle]
+All runs successful.
+
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+S3 = S3List[0]
+S3b = S3List[1]
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+# Check for any errors by printing the return code and anything written to stderr
+print('Return Codes : ', S3.run_return_code, ' and ', S3b.run_return_code)
+# S3.stderr
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=outcellstyle]
+Return Codes :  0  and  0
+
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+plt.figure(figsize=(16,9))
+plt.plot(S3.wvl, S3.edn, S3b.wvl, S3b.edn)
+plt.xlabel('Wavelength [nm]')
+plt.ylabel('Irradiance [mW/m^2/nm]')
+plt.title('Downwelling Spectral Irradiance')
+plt.legend(['Spectral Range A', 'Spectral Range B'])
+plt.grid()
+plt.savefig('ednAerAng.pdf')
+\end{lstlisting}
+
+\begin{center}
+\includegraphics[width=0.6\textwidth]{./pic/libraddaskTemplate_13_0.png}
+\end{center}
+
+
+\begin{lstlisting}[style=tinysize]
+# Check the quality of the Angstrom Law and King-Byrne formula fits
+the_wv = np.arange(350.0, 950.0, 10.0)  # Pick a wavelength range
+the_aot = librad.king_byrne_formula(the_wv, alpha_0, alpha_1, alpha_2)  # Calculate King-Byrne 
+aot_ang = librad.angstrom_law(the_wv, alpha, beta)  # Calculate Angstrom Law
+\end{lstlisting}
+
+
+\begin{lstlisting}[style=tinysize]
+# Plot Angstrom Law and King-Byrne fitted curves with MicroTOPS measurements
+plt.figure(figsize=(16,9))
+plt.plot(the_wv, the_aot, the_wv, aot_ang, aot_wv, aot, 'o')
+plt.xlabel('Wavelength [nm]')
+plt.ylabel('Aerosol Optical Thicknes')
+plt.title('Aerosol Optical Thickness, Angstrom Law and King-Byrne Fit')
+plt.legend(['King-Byrne', 'Angstrom', 'MicroTOPS'])
+plt.grid()
+
+\end{lstlisting}
+
+\begin{center}
+\includegraphics[width=0.6\textwidth]{./pic/libraddaskTemplate_15_0.png}
+\end{center}
+
+
+\section{Shutting down the Client}
+\label{sec:ShuttingdowntheClient}
+
+When the client is no longer required, shut it down.
+\begin{lstlisting}[style=tinysize]
+client.shutdown()
 \end{lstlisting}

@@ -14,8 +14,42 @@ Dask has two parts: (1) dynamic task scheduling for executing, and (2) fast proc
 
 The \libraddask{}  is a Python module that integrates \libradtran{} with Dask with the aim to provide a remote and network-distributed \libradtran{}. This functionality is only available via Python, but this is not considered a major issue with most of the work flow is in Python.
 
+\section{Example Case Study}
+
+For the practical example in this document, assume the following (will be different in your installation):
+\begin{enumerate}
+\item The Dask client will be activated in code run on a local computer using Windows.  The Dask scheduler and workers will be running on a remote server using Linux.
+\item Server (Linux):
+\begin{enumerate}
+\item The server is called \lstinline{nimbus} with IP address \lstinline{146.64.246.94}
+\item The work is done from  user account \lstinline{dgriffith} on the server.
+\item The Python and dask packages are set up in the \lstinline{mordevpy37} conda environment  on the server.
+\end{enumerate}
+
+\item Local PC (Windows):
+\begin{enumerate}
+\item The Python and dask packages are set up in the \lstinline{mort} conda environment  on the local computer.
+\end{enumerate}
+
+\end{enumerate}
+
+
 \section{Document Structure}
 \label{sec:DocumentStructure}
 
+Chapter~\ref{chap:Dask} provides an overview of Dask, on a conceptual and practical basis.  Understanding of these concepts are important for effectively using the server.
 
-This  \todo{complete doc structure} document
+Chapter~\ref{chap:libRadtran}  provides and overview of \libradtran{}, including obtaining, installation and simple example usage.
+
+Chapter~\ref{sec:Installlibraddask}  provides instructions on how to set up \libraddask{}.
+
+Chapter~\ref{chap:ServerUserManual}  contains and extract of an example Jupyter notebook on how to use  \libraddask{}.
+
+Chapter~\ref{chap:Conclusion} concludes the document.
+
+Chapter~\ref{chap:SimpleDaskExamples} contains additional Dask examples.
+
+Chapter~\ref{chap:Portingscr_pytoPython3}  contains a description of the porting of the \libradtran{} Python files in \lstinline{scr_py} to Python 3.
+
+Chapter~\ref{chap:Tools}  contains additional information on tools that may be useful when using \libraddask{}.
+ 

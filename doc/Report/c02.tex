@@ -790,11 +790,11 @@ Start the scheduler and workers:
 \item \textbf{Start the scheduler on the server}. Log in to the server (\lstinline{146.64.246.94}), then activate the Python environment and start the scheduler:
 
 \begin{lstlisting}
-conda activate devpy37
+conda activate mordevpy37
 dask-scheduler
 \end{lstlisting}
 
-If the server already has the necessary Python, dask and pickle versions in the root Python environment there is no need to first activate the Python environment.  In this case the scheduler can be started from any computer by specifying the hostname. So on the local computer the following command will start the scheduler (if versions are correct in the root Python):
+If the server already has the necessary Python, dask and pickle versions in the root Python environment there is no need to first activate the Python environment.  In this case the scheduler can be started from any computer by specifying the hostname. So on the local computer the following command will start the scheduler on the server (if versions are correct in the root Python):
 
 \begin{lstlisting}
 dask-scheduler --host 146.64.246.94
@@ -802,7 +802,7 @@ dask-scheduler --host 146.64.246.94
 
 Either of the above should start the scheduler:
 \begin{lstlisting}[style=tinysize]
-(devpy37) username@servername:~$ dask-scheduler
+(mordevpy37) dgriffith@nimbus:~$ dask-scheduler
  distributed.scheduler - INFO - -----------------------------------------------
  distributed.scheduler - INFO - Local Directory:    /tmp/scheduler-mxiy5sli
  distributed.scheduler - INFO - -----------------------------------------------
@@ -823,7 +823,7 @@ dask-worker tcp://146.64.246.94:8786
 where the IP address and port number must correspond to the scheduler IP and port address. This should start the worker task. Note that the dashboard IP address is also given when the workers start. Without explicitly defining the number of processors, this server has 32 cores and 32 GB memory.    
 
 \begin{lstlisting}[style=tinysize]
-(devpy37) username@servername:~$ dask-worker tcp://146.64.246.94:8786
+(mordevpy37) dgriffith@nimbus:~$ dask-worker tcp://146.64.246.94:8786
 distributed.nanny - INFO -         Start Nanny at: 'tcp://146.64.246.94:35459'
 distributed.worker - INFO -       Start worker at:  tcp://146.64.246.94:45347
 distributed.worker - INFO -          Listening to:  tcp://146.64.246.94:45347
@@ -832,7 +832,7 @@ distributed.worker - INFO - Waiting to connect to:   tcp://146.64.246.94:8786
 distributed.worker - INFO - -------------------------------------------------
 distributed.worker - INFO -               Threads:                         32
 distributed.worker - INFO -                Memory:                   33.71 GB
-distributed.worker - INFO -       Local Directory: /home/username/dask-worker-space/worker-lz08iq0s
+distributed.worker - INFO -       Local Directory: /home/dgriffith/dask-worker-space/worker-lz08iq0s
 distributed.worker - INFO - -------------------------------------------------
 distributed.worker - INFO -         Registered to:   tcp://146.64.246.94:8786
 distributed.worker - INFO - -------------------------------------------------

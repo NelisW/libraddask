@@ -36,8 +36,8 @@ See also
 \subsection{System Reference}
 For reference purposes this installation was done on the following Linux system: Debian 4.9.110, running the 4.9.0-8-amd64 Linux kernel.
 \begin{lstlisting}[style=tinysize]
-(devpy27) dgriffith@servername:~/libRadtran/libRadtran-2.0.3/examples$ uname -a
-Linux servername 4.9.0-8-amd64 #1 SMP Debian 4.9.110-3+deb9u6 (2018-10-08) x86_64 GNU/Linux
+(mordevpy27) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3/examples$ uname -a
+Linux nimbus 4.9.0-8-amd64 #1 SMP Debian 4.9.110-3+deb9u6 (2018-10-08) x86_64 GNU/Linux
 \end{lstlisting}
 
 \subsection{Downloading  \libradtran{}}
@@ -83,8 +83,8 @@ For our application the REPTRAN absorption parameterization data was required, b
 
 
 \begin{lstlisting}[style=tinysize]
-(base) dgriffith@servername:~/libRadtran/libRadtran-2.0.3$ conda activate devpy27
-(devpy27) dgriffith@servername:~/libRadtran/libRadtran-2.0.3$ make check
+(base) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3$ conda activate devpy27
+(devpy27) dgriffith@snimbus:~/libRadtran/libRadtran-2.0.3$ make check
 for dir in examples src_py libsrc_c libsrc_f src GUI lib; do make -C $dir all || exit $?; done
 make[1]: Entering directory '/home/dgriffith/libRadtran/libRadtran-2.0.3/examples'
 
@@ -191,7 +191,7 @@ NCA 2.0 cuboid (0.00001,   0.1)................................................ 
 NCA 2.0 triangle (0.00001,   0.1).............................................. ok.
 1 of the \lstinline{uvspec} tests failed.
 make[1]: Leaving directory '/home/dgriffith/libRadtran/libRadtran-2.0.3/test'
-(devpy27) dgriffith@servername:~/libRadtran/libRadtran-2.0.3$
+(devpy27) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3$
 \end{lstlisting}
 
 From the above test report it is evident that the \lstinline{MYSTIC polarized surface reflection (BPDF)} test had a result error difference of 1.03\%.

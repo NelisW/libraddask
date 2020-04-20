@@ -5,15 +5,22 @@
 
 \section{Set up Python for Dask}
 
-\subsection{Creating the environment}
+\subsection{Creating the Python 3 environment}
 
-Create environment with Anaconda with the appropriate packages and versions to use for Dask.
+Create an environment with Anaconda with the appropriate packages and versions to use for Dask.
 In this case we are using Python 3.7 to run the Dask scheduler and workers on the server.
-Exactly the same versions must be installed on all three computers.
+Exactly the same versions must be installed on the server and local PC.
 
+On the local Windows computer:
 \begin{lstlisting}
-    conda create --name devpy37 python=3.7 anaconda
+    conda create --name mort python=3.7 anaconda
 \end{lstlisting}
+
+On the remote Linux server:
+\begin{lstlisting}
+    conda create --name mordevpy37 python=3.7 anaconda
+\end{lstlisting}
+
 
 \subsection{Additional packages}
 \label{sec:Additionalpackages}
@@ -51,101 +58,49 @@ conda install distributed=2.12.0
 \end{lstlisting}
 
 
+\subsection{Install \libraddask{}}
+\label{sec:Installlibraddask}
 
-------------------------------------------------------------------------------------------------------
+The \libraddask{} library is normally cloned from the GitHub repository and not installed via PyPi or conda. 
+Create a folder into which \libraddask{} can be cloned. In this case assume the folder on a Windows computer is \lstinline{V:\work\WorkN}.  Change the current working directory to this newly-created folder and clone the \libraddask{}  repository from GitHub. In a command window do:
+\begin{lstlisting}
+v:
+cd \work\WorkN
+git clone https://github.com/NelisW/libraddask.git
+\end{lstlisting}
+This should clone \libraddask{}  into the \lstinline{V:\work\WorkN\libraddask} folder.
 
-\subsection{Make Morticia known}
-
-The morticia library is not installed in the Python site-packages tree, so Python must know where to find it. To tell Python where to find this library create a file with the filename \lstinline{morticia.pth} in the \lstinline{site-packages} folder of the \lstinline{mort} environment. On my PC the environment is here: 
-
-    C:/ProgramData/Anaconda3/envs/mort/lib/site-packages/morticia.pth
-
-On Linux it is in a location similar to this
-
-    ~/anaconda2/envs/mordevpy37/lib/python3.7/site-packages/morticia.pth
-
-The file must have only one line, and this line must be the morticia library location.    In my case the library was cloned from the repository into the following folder, and this must be the contents of the file:
-
-    W:/Morticia/OSS-gitlab/morticia
-
-or on the nimbus server (146.64.246.94) the contents must be
-
-    /home/dgriffith/GitHub/morticia
-
-
-
-\subsection{Prepare for Jupyter}
-
-Make the environment visible in a Jupyter notebook"
-
-    conda install notebook ipykernel
-    ipython kernel install
-
-See [here])https://github.com/NelisW/ComputationalRadiometry/blob/master/00-Installing-Python-pyradi.ipynb) for more detail.
-
-
-
-\section{Work on nimbus (\texttt{146.64.246.94}) for user \texttt{dgriffith}}
-
-Home directory \lstinline{~} is \lstinline{/home/dgriffith}
-
-\subsection{Bring nimbus to Python 3 status}
-
-Installed a python 3 environment for morticia: mordevpy37, with the morticia dependencies listed above.
-
-Changed the folder name  \lstinline{~/GitHub/morticia} to \lstinline{~/GitHub/morticia2} to keep the old copy available.
-
-Cloned the python 3 version of morticia into folder \lstinline{~/GitHub/morticia}, from \lstinline{https://github.com/NelisW/morticia}
-
-To see where the \lstinline{site-packages} folder on your anaconda installation are use this code:
-
+To tell Python where to find this library create a file with the filename \lstinline{\libraddask.pth} in the \lstinline{site-packages} folder of the same environment where dask present. When Python is searching for the location of the \libraddask{} module, it will find this file, which will indicate the location where the module is installed.
+To see where the \lstinline{site-packages} folder for the dask conda environment is,  activate the environment and execute this code:
 \begin{lstlisting}
     from distutils.sysconfig import get_python_lib
     print(get_python_lib())
-
 \end{lstlisting}
-Added \lstinline{morticia.pth} to the prepared environment's \lstinline{site-packages} folder, e.g.,  \lstinline{~/anaconda2/envs/mordevpy37/lib/python3.7/site-packages/morticia.pth}. The contents of this file is the single line. 
 
-    \lstinline{/home/dgriffith/GitHub/morticia}
-
-
-\subsection{libRadTran server}
-
-1. On the PC activate the Python 3 morticia environment 
-
-1. Start up the VPN (if used) and find the IP number allocated to the VPN ethernet0. On Windows uUse \lstinline{ipconfig} and look for something like the following (the Ethernet adapter connection number may be different, look for the DNS suffix that says \lstinline{csir.co.za}). This should be an IP address on the CSIR network \lstinline{146.64.xxx.xxx}:
-
+On my\textbf{ Windows} computer the file is saved in the environment here: 
 \begin{lstlisting}
-Ethernet adapter Local Area Connection 2:
-
-Connection-specific DNS Suffix  . : csir.co.za
-Link-local IPv6 Address . . . . . : fe80::8992:152a:c1f0:1260%27
-IPv4 Address. . . . . . . . . . . : 146.64.202.118
-Subnet Mask . . . . . . . . . . . : 255.255.0.0
-Default Gateway . . . . . . . . . :
+    C:/ProgramData/Anaconda3/envs/mort/lib/site-packages\libraddask.pth
 \end{lstlisting}
-
-    To find the IP address on Linux use \lstinline{ip addr show}.
-
-
-1. On the PC start the Dask scheduler, using the VPN IP address
-
-
+The \lstinline{\libraddask.pth} file must have only one line, and this line must be the \libraddask{}  library location.    In my case the library was cloned from the repository into the following folder, and this must be the contents of the file:
 \begin{lstlisting}
-      dask-scheduler --host 146.64.246.94
+    V:\work\WorkN
 \end{lstlisting}
 
-1. On nimbus activate the Python 3 morticia environment 
-
-1. On nimbus cd to the libRadTran bin folder  \lstinline{/home/dgriffith/libRadtran/libRadtran-2.0.2/bin/}
-
-1. On nimbus start the Dask scheworker process, using the VPN IP address and the Dask port number
-
+On the \textbf{Linux} computer (the nimbus server in this case)  the file is saved in the environment here: 
 \begin{lstlisting}
-    dask-worker tcp://146.64.246.94:8786
+/home/dgriffith//anaconda2/envs/mordevpy37/lib/python3.7/site-packages/libraddask.pth
+\end{lstlisting}
+The file contents must be a full path, the `$\sim$/libraddask` form does not seem to work:
+\begin{lstlisting}
+/home/dgriffith/libraddask
 \end{lstlisting}
 
-1. Open the notebook and set the scheduler using the VPN host address
-
-
+\subsection{Prepare for Jupyter}
+If the jupyter notebook will be used in your work,  install the Jupyter notebook in Python.
+\begin{lstlisting}
+conda install notebook ipykernel
+ipython kernel install
+\end{lstlisting}
+See here for more detail:\\
+\lstinline{https://github.com/NelisW/ComputationalRadiometry/blob/master/00-Installing-Python-pyradi.ipynb}.
 

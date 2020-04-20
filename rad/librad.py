@@ -1483,7 +1483,8 @@ class Case(object):
         errname = self.name+'.ERR'
         swnprocess = 'uvspec'
         #print(sys.version)
-        print(f'Current working directory: "{os.getcwd()}"')
+        #print(f'Current working directory: "{os.getcwd()}"')
+        print(f'Running {self.name}')
         
         errstr = f'\n\n**** Unable to spawn "{swnprocess}" process on input file "{inputname}". \n**** Probably not installed system-wide on platform.\n'
 

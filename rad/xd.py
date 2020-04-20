@@ -12,17 +12,41 @@ import warnings
 from operator import mul, add
 import copy
 import functools
-
-# __all__ = ['xd_identity','xd_harmonise_interp','xd_interp_axis_to','xd_harmonised_product',
-#         'check_convert_units','xd_check_convert_units','xd_attrs_update',]
-
-
-import numpy as np
 from pint import UnitRegistry
+
 ureg = UnitRegistry()
 Q_ = ureg.Quantity
 
+__all__ = ['Q_','U_','long_name','standard_names','default_units','Scalar',
+    'UnitMismatch','MissingUnits','MissingDataArrayAxis',
+    'xd_identity','xd_harmonise_interp','xd_interp_axis_to','xd_harmonised_product',
+        'check_convert_units','xd_check_convert_units','xd_attrs_update',]
+
+
+"""BehaviorChangeWarning: The way Pint handles NumPy operations has changed with the
+implementation of NEP 18. Unimplemented NumPy operations will now fail instead of making
+assumptions about units. Some functions, eg concat, will now return Quanties with units, where
+they returned ndarrays previously. See https://github.com/hgrecco/pint/pull/905.
+
+To hide this warning, wrap your first creation of an array Quantity with
+warnings.catch_warnings(), like the following:
+
+import numpy as np
 import warnings
+from pint import Quantity
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    Quantity([])
+
+To disable the new behavior, see
+https://www.numpy.org/neps/nep-0018-array-function-protocol.html#implementation
+"""
+from pint import Quantity
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    Quantity([])
+
 
 def U_(units):
     """ Returns a pint.Quantity of magnitude one with the given units

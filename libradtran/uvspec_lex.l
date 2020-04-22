@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------
- * $Id: lex_starter.l 3054 2014-07-21 09:43:44Z Claudia.Emde $
+ * $Id: lex_starter.l 3512 2019-11-23 10:10:01Z bernhard.mayer $
  * 
  * This file is part of libRadtran.
  * Copyright (c) 1997-2012 by Arve Kylling, Bernhard Mayer,
@@ -89,6 +89,10 @@ int write_user_defined_output (input_struct Input, output_struct *output, FILE *
 int check_if_result_exists     (int *output_user, int n_output_user, int solver, int **valid_result, int quiet);
 int write_netCDF_output        (input_struct Input, output_struct *output);
 
+static int tokens_parse_one    (char *in, char *out, int max, char **saveptr);
+static char **tokens_parse     (char *yytext, int *count);
+static void tokens_free        (char **toks, int count);
+
 char *s, *t, *u;
 int ntokens;
 int mol_id;
@@ -101,7 +105,7 @@ int ierror=0;
 int line_number;
 input_struct Input;
 output_struct Output;
-int i=0, j=0, isp=0, iscr=0, ispoff=0;
+int i=0, j=0, isp=0, iwc=0, iscr=0, ispoff=0;
 int iscloudcover=0, isipafiles=0;
 int position=0;
 float epsilon=1E-7;
@@ -143,7 +147,10 @@ SIGNED_FLOAT {SIGN}?{FLOAT}
 SPACE_SIGNED_FLOAT {SPACE}+{SIGNED_FLOAT}
 SIGNED_FLOATS {SPACE_SIGNED_FLOAT}+
 SIGNED_INTEGER {SIGN}?{INTEGER}
-WORD     [_\.\/A-Za-z][_\.\/A-Za-z0-9\-]*
+/* aky WORD     [_\.\/A-Za-z][_\.\/A-Za-z0-9\-]**/
+WORDX     [_\.\/\\A-Za-z][_\.\/\\A-Za-z0-9\-:]*
+WORDX_OR_SPACE {WORDX}|{SPACE}
+WORD           {WORDX}|(\"{WORDX_OR_SPACE}*\")
 DIM      [1,3][d,D]
 SPACE_PROFILETYPE {SPACE}+({DIM}|{WORD})
 SPACE_WORD {SPACE}+{WORD}
@@ -236,11 +243,6 @@ aerosol_modify{SPACE_WORD}{SPACE_WORD}{SPACE_SIGNED_FLOAT} {
 aerosol_profile_modtran {
 	Input.aer.profile_modtran = TRUE;
 }
-aerosol_refrac_index{SPACE_SIGNED_FLOAT}{SPACE_FLOAT} {
-	Input.aer.nreal = yytext2float(yytext, 2, 3);
-	Input.aer.nimag = yytext2float(yytext, 3, 3);
-	Input.aer.spec = 1;
-}
 aerosol_season{SPACE_INTEGER} {
 	Input.aer.seasn = yytext2int(yytext, 2, 2);
 	Input.aer.spec = 1;
@@ -248,9 +250,8 @@ aerosol_season{SPACE_INTEGER} {
 aerosol_set_tau_at_wvl{SPACE_FLOAT}{SPACE_FLOAT} {
 	Input.aer.tau_wvl_lambda = yytext2float(yytext, 2, 3);
 	Input.aer.tau_wvl_tau = yytext2float(yytext, 3, 3);
-}
-aerosol_sizedist_file{SPACE_WORD} {
-	yytextCstring ( Input.aer.filename[Id], yytext, 2, 2);
+	Input.aer.modify[MODIFY_VAR_TAU550][MODIFY_TYPE_SET] = Input.aer.tau_wvl_tau;
+	Input.aer.spec = 1;
 }
 aerosol_species_file{SPACE_WORD} {
 	Input.aer.mixture_name = yytext2string(yytext, 2, 2);
@@ -313,13 +314,6 @@ atm_z_grid{SIGNED_FLOATS} {
 	ntokens = yytext2ntokens(yytext);
 	Input.atm.z_atm_forced_sea =  yytext2floats(yytext, ntokens);
 	Input.atm.nz_atm_forced_sea = ntokens;
-}
-atmos_region{SPACE_INTEGER}{SPACE_INTEGER}{SPACE_INTEGER}{SPACE_INTEGER} {
-	Input.rte.mc.backward.yes = 1;
-	Input.rte.mc.ixmin = yytext2int(yytext, 2, 5);
-	Input.rte.mc.iymin = yytext2int(yytext, 3, 5);
-	Input.rte.mc.ixmax = yytext2int(yytext, 4, 5);
-	Input.rte.mc.iymax = yytext2int(yytext, 5, 5);
 }
 atmosphere_file{SPACE_WORD} {
 	Input.atmosphere_filename = yytext2string(yytext, 2, 2);
@@ -510,6 +504,7 @@ crs_model{SPACE_WORD}{SPACE_WORD} {
 	s = yytext2string(yytext, 2, 3);
 	if ( strcasecmp("no2", s)==0 )	{ mol_id = CRS_MOL_NO2; }
 	else if ( strcasecmp("o3", s)==0 )	{ mol_id = CRS_MOL_O3; }
+	else if ( strcasecmp("o4", s)==0 )	{ mol_id = CRS_MOL_O4; }
 	else if ( strcasecmp("rayleigh", s)==0 )	{ mol_id = CRS_MOL_RAYLEIGH; }
 	else	{fprintf(stderr,"Option %s  has an invalid argument 1 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
 	free(s); 
@@ -520,9 +515,13 @@ crs_model{SPACE_WORD}{SPACE_WORD} {
 	else if ( strcasecmp("Bogumil", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_BOGUMIL; }
 	else if ( strcasecmp("Burrows", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_BURROWS; }
 	else if ( strcasecmp("Daumont", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_DAUMONT; }
+	else if ( strcasecmp("Greenblatt", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_GREENBLATT; }
 	else if ( strcasecmp("Molina", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_MOLINA; }
 	else if ( strcasecmp("Nicolet", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_NICOLET; }
 	else if ( strcasecmp("Penndorf", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_PENNDORF; }
+	else if ( strcasecmp("Serdyuchenko", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_SERDYUCHENKO; }
+	else if ( strcasecmp("Thalman", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_THALMAN; }
+	else if ( strcasecmp("Vandaele", s)==0 )	{ Input.crs_model[mol_id] = CRS_MODEL_VANDAELE; }
 	else	{fprintf(stderr,"Option %s  has an invalid argument 2 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
 	free(s); 
 }
@@ -596,7 +595,7 @@ heating_rate{SPACE_WORD}? {
 	free(s); 
 	}
 }
-ic_file{SPACE_option_definition.ProfileType}{SPACE_WORD} {
+ic_file{SPACE_PROFILETYPE}{SPACE_WORD} {
 	isp = get_caoth_index(&Input.caoth,&Input.n_caoth,"ic",1);
 	s = yytext2string(yytext, 2, 3);
 	if ( strcasecmp("1d", s)==0 )	{ Input.caoth[isp].source = CAOTH_FROM_1D; }
@@ -683,6 +682,7 @@ ic_properties{SPACE_WORD}{SPACE_WORD}? {
 	else if ( strcasecmp("fu", s)==0 )	{ Input.caoth[isp].properties = PROP_FU; }
 	else if ( strcasecmp("hey", s)==0 )	{ Input.caoth[isp].properties = PROP_HEY; }
 	else if ( strcasecmp("key", s)==0 )	{ Input.caoth[isp].properties = PROP_KEY; }
+	else if ( strcasecmp("raytracing", s)==0 )	{ Input.caoth[isp].properties = PROP_RAYTRACING; }
 	else if ( strcasecmp("yang", s)==0 )	{ Input.caoth[isp].properties = PROP_YANG; }
 	else if ( strcasecmp("yang2013", s)==0 )	{ Input.caoth[isp].properties = PROP_YANG2013; }
 	else	{ Input.caoth[isp].properties = PROP_FILE;
@@ -694,6 +694,9 @@ ic_properties{SPACE_WORD}{SPACE_WORD}? {
 	else	{fprintf(stderr,"Option %s  has an invalid argument 2 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
 	free(s); 
 	}
+}
+ic_raytracing_file{SPACE_WORD} {
+	yytextCstring ( Input.filename[FN_RAYTRACING], yytext, 2, 2);
 }
 interpret_as_level{SPACE_WORD} {
 	isp = get_caoth_index(&Input.caoth,&Input.n_caoth, yytext2string(yytext, 2, 2),0);
@@ -732,15 +735,14 @@ longitude{SPACE_WORD}{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT}?{SPACE_SIGNED_FLOA
 		Input.lon_seconds = yytext2float(yytext, 5, ntokens+1);
 	}
 }
-mc_aerosol_is{SPACE_WORD} {
-	yytextCstring ( Input.rte.mc.filename[FN_MC_AERIS], yytext, 2, 2);
-	Input.rte.mc.concentration_is = TRUE;
-}
 mc_albedo_spectral {
 	Input.rte.mc.spectral = 1;
 }
 mc_albedo_spectral_file{SPACE_WORD} {
-	yytextCstring ( Input.rte.mc.filename[FN_MC_ALBEDO_SPECTRAL], yytext, 2, 2);
+	yytextCstring ( Input.rte.mc.filename[FN_MC_ALBEDO_TYPE], yytext, 2, 2);
+}
+mc_ambrals_type{SPACE_WORD} {
+	yytextCstring ( Input.rte.mc.filename[FN_MC_AMBRALS_SPECTRAL], yytext, 2, 2);
 }
 mc_azimuth_old {
 	Input.rte.mc.azimuth = MCAZIMUTH_OLD;
@@ -768,8 +770,13 @@ mc_backward_output{SPACE_WORD}{SPACE_WORD}? {
 	else if ( strcasecmp("act", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_ACT; }
 	else if ( strcasecmp("edir", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EDIR; }
 	else if ( strcasecmp("edn", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EDN; }
+	else if ( strcasecmp("ednpv", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EDNPV; }
 	else if ( strcasecmp("emis", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EMIS; }
 	else if ( strcasecmp("eup", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EUP; }
+	else if ( strcasecmp("exn", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EXN; }
+	else if ( strcasecmp("exp", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EXP; }
+	else if ( strcasecmp("eyn", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EYN; }
+	else if ( strcasecmp("eyp", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_EYP; }
 	else if ( strcasecmp("fdir", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_FDIR; }
 	else if ( strcasecmp("fdn", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_FDN; }
 	else if ( strcasecmp("fup", s)==0 )	{ Input.rte.mc.backward.output = MCBACKWARD_FUP; }
@@ -802,8 +809,65 @@ mc_bcond{SPACE_WORD} {
 	else	{fprintf(stderr,"Option %s  has an invalid argument 1 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
 	free(s); 
 }
-mc_coherent_backscatter {
+mc_boxairmass{SPACE}+{DIM} {
+	s = yytext2string(yytext, 2, 2);
+	if ( strcasecmp("1D", s)==0 )	{ id = DIM_1D; }
+	else if ( strcasecmp("3D", s)==0 )	{ id = DIM_3D; }
+	else	{fprintf(stderr,"Option %s  has an invalid argument 1 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
+	free(s); 
+	Input.rte.mc.boxairmass[id] = 1;
+}
+mc_coherent_backscatter{SPACE_INTEGER}?{SPACE_INTEGER}? {
+	ntokens = yytext2ntokens(yytext);
 	Input.rte.mc.coherent_backscatter = 1;
+	if ( ntokens >= 1 )	 {
+		Input.rte.mc.coherent_backscatter_lmode = yytext2int(yytext, 2, ntokens+1);
+	}
+	if ( ntokens >= 2 )	 {
+		Input.rte.mc.coherent_backscatter_off = yytext2int(yytext, 3, ntokens+1);
+	}
+}
+mc_core{SPACE_WORD}? {
+	ntokens = yytext2ntokens(yytext);
+	Input.rte.mc.core_isactive = 1;
+	isp = get_caoth_index(&Input.caoth,&Input.n_caoth,"hiddencore_dummy",0);
+	iwc = get_caoth_index(&Input.caoth,&Input.n_caoth,"wc",0);
+	Input.caoth[isp].source = CAOTH_FROM_3D;
+	Input.caoth[isp].filename = Input.caoth[iwc].filename;
+	Input.caoth[isp].properties = PROP_HU;
+	if ( ntokens >= 1 )	 {
+		Input.rte.mc.core_inputfile = yytext2string(yytext, 2, ntokens+1);
+	}
+}
+mc_core_savefile{SPACE_WORD}? {
+	ntokens = yytext2ntokens(yytext);
+	if ( ntokens >= 1 )	 {
+		Input.rte.mc.core_savefile = yytext2string(yytext, 2, ntokens+1);
+	}
+}
+mc_core_scale{SPACE_SIGNED_FLOAT} {
+	Input.rte.mc.core_scale = yytext2float(yytext, 2, 2);
+}
+mc_core_threshold{SPACE_FLOAT} {
+	Input.rte.mc.core_threshold = yytext2float(yytext, 2, 2);
+}
+mc_forward_output{SPACE_WORD}{SPACE_WORD}? {
+	ntokens = yytext2ntokens(yytext);
+	s = yytext2string(yytext, 2, ntokens+1);
+	if ( strcasecmp("absorption", s)==0 )	{ Input.rte.mc.absorption = MCFORWARD_ABS_ABSORPTION; }
+	else if ( strcasecmp("actinic", s)==0 )	{ Input.rte.mc.absorption = MCFORWARD_ABS_ACTINIC; }
+	else if ( strcasecmp("emission", s)==0 )	{ Input.rte.mc.absorption = MCFORWARD_ABS_EMISSION; }
+	else if ( strcasecmp("heating", s)==0 )	{ Input.rte.mc.absorption = MCFORWARD_ABS_HEATING; }
+	else	{fprintf(stderr,"Option %s  has an invalid argument 1 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
+	free(s); 
+	if ( ntokens >= 2 )	 {
+		s = yytext2string(yytext, 3, ntokens+1);
+	if ( strcasecmp("K_per_day", s)==0 )	{ Input.rte.mc.abs_unit = MCABS_UNIT_K_PER_DAY; }
+	else if ( strcasecmp("W_per_m2_and_dz", s)==0 )	{ Input.rte.mc.abs_unit = MCABS_UNIT_W_PER_M2_AND_DZ; }
+	else if ( strcasecmp("W_per_m3", s)==0 )	{ Input.rte.mc.abs_unit = MCABS_UNIT_W_PER_M3; }
+	else	{fprintf(stderr,"Option %s  has an invalid argument 2 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
+	free(s); 
+	}
 }
 mc_ipa {
 	Input.rte.mc.ipa = 1;
@@ -817,29 +881,38 @@ mc_lidar_file{SPACE_WORD} {
 mc_maxscatters{SPACE_INTEGER} {
 	Input.rte.mc.maxscatters = yytext2int(yytext, 2, 2);
 }
-mc_panorama{SPACE_WORD} {
+mc_minphotons{SPACE_INTEGER} {
+	Input.rte.mc.minphotons = yytext2int(yytext, 2, 2);
+}
+mc_minscatters{SPACE_INTEGER} {
+	Input.rte.mc.minscatters = yytext2int(yytext, 2, 2);
+}
+mc_nca{SPACE_WORD}? {
+	ntokens = yytext2ntokens(yytext);
+	Input.rte.mc.nca = 1;
+	if ( ntokens >= 1 )	 {
+		Input.rte.mc.nca_options = yytext2string(yytext, 2, ntokens+1);
+	}
+}
+mc_panorama_alignment{SPACE_WORD} {
 	s = yytext2string(yytext, 2, 2);
-	if ( strcasecmp("circumsolar_var_red", s)==0 )	{ id = PAN_FLAG_CIRCUMSOLAR_VAR_RED; }
-	else if ( strcasecmp("distr_photons_over_pixel", s)==0 )	{ id = PAN_FLAG_DISTR_PHOTONS_OVER_PIXEL; }
-	else if ( strcasecmp("no_pixel", s)==0 )	{ id = PAN_FLAG_NO_PIXEL; }
-	else if ( strcasecmp("quicklook", s)==0 )	{ id = PAN_FLAG_QUICKLOOK; }
-	else if ( strcasecmp("weight_with_cos", s)==0 )	{ id = PAN_FLAG_WEIGHT_WITH_COS; }
-	else if ( strcasecmp("with_direct_rad", s)==0 )	{ id = PAN_FLAG_WITH_DIRECT_RAD; }
+	if ( strcasecmp("mu", s)==0 )	{ Input.rte.mc.pan_alignment = PAN_ALIGNMENT_MU; }
+	else if ( strcasecmp("sun", s)==0 )	{ Input.rte.mc.pan_alignment = PAN_ALIGNMENT_SUN; }
+	else if ( strcasecmp("zenith", s)==0 )	{ Input.rte.mc.pan_alignment = PAN_ALIGNMENT_ZENITH; }
 	else	{fprintf(stderr,"Option %s  has an invalid argument 1 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
 	free(s); 
-	Input.rte.mc.pan[id] = 1;
 }
-mc_panorama_view{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT} {
+mc_panorama_forward {
 	Input.rte.mc.pan_angles = calloc (4, sizeof(double));
-	Input.rte.mc.pan_angles[0] = yytext2float(yytext, 2, 5);
-	Input.rte.mc.pan_angles[1] = yytext2float(yytext, 3, 5);
-	Input.rte.mc.pan_angles[2] = yytext2float(yytext, 4, 5);
-	Input.rte.mc.pan_angles[3] = yytext2float(yytext, 5, 5);
-	Input.rte.mc.panorama = PAN_MODE_CAMERA;
+	Input.rte.mc.pan_angles[0] = 0.0;
+	Input.rte.mc.pan_angles[1] = 360.0;
+	Input.rte.mc.pan_angles[2] = 0.0;
+	Input.rte.mc.pan_angles[3] = 180.0;
+	Input.rte.mc.panorama_forward = 1;
 	Input.rte.mc.allocate_umu_and_phi = TRUE;
 }
-mc_photons{SPACE_INTEGER} {
-	Input.rte.mc.photons = yytext2int(yytext, 2, 2);
+mc_photons{SPACE_FLOAT} {
+	Input.rte.mc.photons = (long int) yytext2double(yytext, 2, 2);
 }
 mc_photons_file{SPACE_WORD} {
 	yytextCstring ( Input.rte.mc.filename[FN_MC_PHOTONS], yytext, 2, 2);
@@ -861,31 +934,36 @@ mc_radial_pathlength_dt{SPACE_FLOAT} {
 mc_randomseed{SPACE_INTEGER} {
 	Input.rte.mc.randomseed = yytext2int(yytext, 2, 2);
 }
+mc_reference_to_nn {
+	Input.rte.mc.reference_to_NN = 1;
+}
 mc_refraction {
 	Input.rte.mc.refraction = 1;
 }
-mc_ris{SPACE_WORD}{SPACE_SIGNED_FLOAT} {
-	s = yytext2string(yytext, 2, 3);
-	if ( strcasecmp("factor", s)==0 )	{ id = MC_RIS_FACTOR; }
-	else if ( strcasecmp("optical_depth", s)==0 )	{ id = MC_RIS_OPTICAL_DEPTH; }
-	else	{fprintf(stderr,"Option %s  has an invalid argument 1 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
-	free(s); 
-	Input.rte.mc.ris[id] = yytext2float(yytext, 3, 3);
+mc_rpv_spectral_file{SPACE_WORD} {
+	yytextCstring ( Input.rte.mc.filename[FN_MC_RPV2D_TYPE], yytext, 2, 2);
 }
 mc_satellite_view{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT} {
 	Input.rte.mc.pan_angles = calloc (4, sizeof(double));
-	Input.rte.mc.pan_angles[0] = yytext2float(yytext, 2, 5);
-	Input.rte.mc.pan_angles[1] = yytext2float(yytext, 3, 5);
-	Input.rte.mc.pan_angles[2] = yytext2float(yytext, 4, 5);
-	Input.rte.mc.pan_angles[3] = yytext2float(yytext, 5, 5);
+	Input.rte.mc.pan_angles[0] = yytext2double(yytext, 2, 5);
+	Input.rte.mc.pan_angles[1] = yytext2double(yytext, 3, 5);
+	Input.rte.mc.pan_angles[2] = yytext2double(yytext, 4, 5);
+	Input.rte.mc.pan_angles[3] = yytext2double(yytext, 5, 5);
 	Input.rte.mc.panorama = PAN_MODE_SATELLITE;
 	Input.rte.mc.allocate_umu_and_phi = TRUE;
 }
-mc_sensorposition{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT} {
-	Input.rte.mc.sensorposition_x = yytext2float(yytext, 2, 4);
-	Input.rte.mc.sensorposition_y = yytext2float(yytext, 3, 4);
-	Input.rte.mc.sensorposition_z = yytext2float(yytext, 4, 4);
-	Input.rte.mc.sensorposition = MC_SENSORPOSITION_CARTESIAN;
+mc_sensordirection{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT}{SPACE_SIGNED_FLOAT} {
+	Input.rte.mc.sensordirection_dx = yytext2float(yytext, 2, 4);
+	Input.rte.mc.sensordirection_dy = yytext2float(yytext, 3, 4);
+	Input.rte.mc.sensordirection_dz = yytext2float(yytext, 4, 4);
+	Input.rte.mc.sensordirection = 1;
+}
+mc_spectral_is{SPACE_FLOAT}? {
+	ntokens = yytext2ntokens(yytext);
+	Input.rte.mc.spectral_is = TRUE;
+	if ( ntokens >= 1 )	 {
+		Input.rte.mc.spectral_is_wvl[0] = yytext2float(yytext, 2, ntokens+1);
+	}
 }
 mc_spherical{SPACE}+{DIM} {
 	s = yytext2string(yytext, 2, 2);
@@ -916,6 +994,9 @@ mc_tipa{SPACE_WORD} {
 	else if ( strcasecmp("dirdiff", s)==0 )	{ Input.rte.mc.tipa = TIPA_DIRDIFF; }
 	else	{fprintf(stderr,"Option %s  has an invalid argument 1 on line %d: %s\n", yytext, line_number+1, s); ierror++;} 
 	free(s); 
+}
+mc_triangular_surface_file{SPACE_WORD} {
+	yytextCstring ( Input.rte.mc.filename[FN_MC_TRIANGULAR_SURFACE], yytext, 2, 2);
 }
 mc_truncate{SPACE_SIGNED_FLOAT}? {
 	ntokens = yytext2ntokens(yytext);
@@ -959,6 +1040,7 @@ mol_abs_param{SPACE_WORD}{SPACE_WORD}? {
 	else if ( strcasecmp("kato", s)==0 )	{ Input.ck_scheme = CK_KATO; }
 	else if ( strcasecmp("kato2", s)==0 )	{ Input.ck_scheme = CK_KATO2; }
 	else if ( strcasecmp("kato2.96", s)==0 )	{ Input.ck_scheme = CK_KATO2_96; }
+	else if ( strcasecmp("kato2andwandji", s)==0 )	{ Input.ck_scheme = CK_KATO2ANDWANDJI; }
 	else if ( strcasecmp("lowtran", s)==0 )	{ Input.ck_scheme = CK_LOWTRAN; }
 	else if ( strcasecmp("reptran", s)==0 )	{ Input.ck_scheme = CK_REPTRAN; }
 	else if ( strcasecmp("reptran_channel", s)==0 )	{ Input.ck_scheme = CK_REPTRAN_CHANNEL; }
@@ -1096,7 +1178,7 @@ polradtran{SPACE_WORD}{SPACE_INTEGER} {
 	Input.rte.polradtran[id] = yytext2int(yytext, 3, 3);
 }
 polradtran_max_delta_tau{SPACE_SIGNED_FLOAT} {
-	Input.rte.pol_max_delta_tau = yytext2float(yytext, 2, 2);
+	Input.rte.pol_max_delta_tau = yytext2double(yytext, 2, 2);
 }
 polradtran_quad_type{SPACE_WORD} {
 	Input.rte.pol_quad_type = yytext2string(yytext, 2, 2);
@@ -1109,7 +1191,7 @@ print_disort_info{INTEGERS} {
 	Input.rte.prndis =  yytext2integers(yytext, ntokens);
 	Input.rte.nprndis = ntokens;
 }
-profile_file{SPACE_WORD}{SPACE_option_definition.ProfileType}{SPACE_WORD} {
+profile_file{SPACE_WORD}{SPACE_PROFILETYPE}{SPACE_WORD} {
 	isp = get_caoth_index(&Input.caoth,&Input.n_caoth, yytext2string(yytext, 2, 4),0);
 	s = yytext2string(yytext, 3, 4);
 	if ( strcasecmp("1d", s)==0 )	{ Input.caoth[isp].source = CAOTH_FROM_1D; }
@@ -1210,6 +1292,8 @@ rte_solver{SPACE_WORD} {
 	else if ( strcasecmp("sslidar", s)==0 )	{ Input.rte.solver = SOLVER_SSLIDAR; }
 	else if ( strcasecmp("sss", s)==0 )	{ Input.rte.solver = SOLVER_SSS; }
 	else if ( strcasecmp("sssi", s)==0 )	{ Input.rte.solver = SOLVER_SSSI; }
+	else if ( strcasecmp("twomaxrnd", s)==0 )	{ Input.rte.solver = SOLVER_TWOMAXRND; }
+	else if ( strcasecmp("twomaxrnd3C", s)==0 )	{ Input.rte.solver = SOLVER_TWOMAXRND3C; }
 	else if ( strcasecmp("twostr", s)==0 )	{ Input.rte.solver = SOLVER_TWOSTR; }
 	else if ( strcasecmp("twostrebe", s)==0 )	{ Input.rte.solver = SOLVER_TWOSTREBE; }
 	else if ( strcasecmp("tzs", s)==0 )	{ Input.rte.solver = SOLVER_TZS; }
@@ -1319,7 +1403,7 @@ thermal_bands_file{SPACE_WORD} {
 }
 thermal_bandwidth{SPACE_FLOAT}{SPACE_WORD}? {
 	ntokens = yytext2ntokens(yytext);
-	Input.bandwidth = yytext2float(yytext, 2, ntokens+1);
+	Input.bandwidth = yytext2double(yytext, 2, ntokens+1);
 	if ( ntokens >= 2 )	 {
 		s = yytext2string(yytext, 3, ntokens+1);
 	if ( strcasecmp("cm-1", s)==0 )	{ Input.bandwidth_unit = UNIT_PER_CM_1; }
@@ -1361,7 +1445,7 @@ wavelength_index{SPACE_INTEGER}{SPACE_INTEGER}? {
 		Input.wl.end_index = yytext2int(yytext, 3, ntokens+1);
 	}
 }
-wc_file{SPACE_option_definition.ProfileType}{SPACE_WORD} {
+wc_file{SPACE_PROFILETYPE}{SPACE_WORD} {
 	isp = get_caoth_index(&Input.caoth,&Input.n_caoth,"wc",1);
 	s = yytext2string(yytext, 2, 3);
 	if ( strcasecmp("1d", s)==0 )	{ Input.caoth[isp].source = CAOTH_FROM_1D; }
@@ -1527,6 +1611,7 @@ output_user{WORDS}                  {s = (char *) calloc (strlen(yytext)+1,sizeo
 				       else if (strcmp("wavenumber_min",t)==0){Input.output_user[i-2] = OUTPUT_USER_WAVENUMBER_MIN;}
 				       else if (strcmp("wavenumber_max",t)==0){Input.output_user[i-2] = OUTPUT_USER_WAVENUMBER_MAX;}
 				       else if (strcmp("zout",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SUR;}
+                                       else if (strcmp("cth", t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SUR;}
 				       else if (strcmp("zout_sur",t)==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SUR;}
 				       else if (strcmp("zout_sea",t)==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SEA;}
 				       else if (strcmp("z_sur",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_Z_SUR;}
@@ -1713,10 +1798,10 @@ radiosonde{SPACE}+{WORD}{WORDS}     {Input.atm.rs_source=RS_FROM_FILE;
 time{WORDS}{FLOATS}                 {ntokens = yytext2ntokens(yytext);
                                      tmpint=0;
                                      s =  yytext2string(yytext,2,ntokens+1);
-                                     if      (strncasecmp(s,"UTC",3) == 0) { Input.time_zone = TIME_UTC; tmpint=1; }
-				     else if (strncasecmp(s,"LAT",3) == 0) { Input.time_zone = TIME_LAT; tmpint=1; }
-                                     else {Input.time_zone = TIME_UTC; tmpint=0;}
-                                     if (Input.time_zone == TIME_UTC) {
+                                     if      (strncasecmp(s,"UTC",3) == 0) { Input.time_zone = TIMEZONE_UTC; tmpint=1; }
+				     else if (strncasecmp(s,"LAT",3) == 0) { Input.time_zone = TIMEZONE_LAT; tmpint=1; }
+                                     else {Input.time_zone = TIMEZONE_UTC; tmpint=0;}
+                                     if (Input.time_zone == TIMEZONE_UTC) {
                                       if (ntokens == 6+tmpint) {
                                         Input.UTC.tm_year  = yytext2int  (yytext, 2+tmpint, ntokens+1) - 1900; /* !!! years after 1900             !!! */
                                         Input.UTC.tm_mon   = yytext2int  (yytext, 3+tmpint, ntokens+1) -    1; /* !!! month after January 0 ... 11 !!! */
@@ -1730,7 +1815,7 @@ time{WORDS}{FLOATS}                 {ntokens = yytext2ntokens(yytext);
 				            ierror++;
                                       }
                                      }
-                                     else if (Input.time_zone == TIME_LAT) {
+                                     else if (Input.time_zone == TIMEZONE_LAT) {
                                       if (ntokens == 6+tmpint) {
                                         Input.LAT.tm_year  = yytext2int  (yytext, 2+tmpint, ntokens+1) - 1900; /* !!! years after 1900             !!! */
                                         Input.LAT.tm_mon   = yytext2int  (yytext, 3+tmpint, ntokens+1) -    1; /* !!! month after January 0 ... 11 !!! */
@@ -1826,6 +1911,20 @@ z_interpolate{WORDS}                {//s = (char *) calloc (strlen(yytext)+1,siz
                                        ierror++;
                                      }
 				    }
+
+tzs_cloud_top_height{SIGNED_FLOATS} {
+                                     /* determine input option */
+				     Input.atm.zout_source = OUTLEVEL_ZOUT_ABOVE_SUR;
+				     Input.atm.nzout = yytext2ntokens(yytext);
+				     Input.atm.zout_sur = calloc (Input.atm.nzout,sizeof(float));
+				     for (i=2;i<=Input.atm.nzout+1; i++) {
+					  u = yytext2string(yytext, i, Input.atm.nzout+1);
+					  Input.atm.zout_sur[i-2] = yytext2float(yytext,i,ntokens+1);
+					  free(u);
+					  }
+				       }
+				       
+
 zout{SIGNED_FLOATS_OR_WORDS}|zout_sur{SIGNED_FLOATS_OR_WORDS}|zout_sea{SIGNED_FLOATS_OR_WORDS}  {
                                      /* determine input option */
                                      ntokens = yytext2ntokens(yytext);
@@ -1886,12 +1985,8 @@ zout{SIGNED_FLOATS_OR_WORDS}|zout_sur{SIGNED_FLOATS_OR_WORDS}|zout_sea{SIGNED_FL
                                      }
 				    }
 
-  /* OBSOLETE OPTIONS */
- /*aerosol_sizedist_file{SPACE_WORD}   {fprintf(stderr,"aerosol_sizedist_file is obsolete!"); ierror++;}*/
-aerosol_sizedist_file{SPACE_WORD} {
-	Input.aer.spec = 1;
-	yytextCstring ( Input.aer.filename[FN_AER_SIZ], yytext, 2, 2);
-}
+
+
  /*aerosol_refrac_index{SPACE_FLOAT}{SPACE_FLOAT}   {fprintf(stderr,"aerosol_refrac_index is obsolete!"); ierror++;} */
 aerosol_refrac_index{SPACE_FLOAT}{SPACE_FLOAT} {
 	Input.aer.spec = 1;
@@ -1899,6 +1994,15 @@ aerosol_refrac_index{SPACE_FLOAT}{SPACE_FLOAT} {
 	Input.aer.im = yytext2float(yytext, 3, 3);
 }
 
+
+
+
+  /* OBSOLETE OPTIONS */
+ /*aerosol_sizedist_file{SPACE_WORD}   {fprintf(stderr,"aerosol_sizedist_file is obsolete!"); ierror++;}*/
+aerosol_sizedist_file{SPACE_WORD} {
+	Input.aer.spec = 1;
+	yytextCstring ( Input.aer.filename[FN_AER_SIZ], yytext, 2, 2);
+}
 
 
 mc_cloud_grid{SPACE_INTEGER}{SPACE_INTEGER}{SPACE_INTEGER} { fprintf (stderr, " ... option mc_cloud_grid is obsolete!\n"); ierror++;}
@@ -1925,7 +2029,6 @@ time_interpolate{WORDS}             {fprintf(stderr,"time_interpolate is obsolet
 time_interval{SIGNED_FLOATS_OR_WORDS} {fprintf(stderr,"time_interval is obsolete!"); ierror++;}
 
 
-
 {SPACE}+       ;         /* eat up blanks */ 
 
 {COMMENT}*     ;         /* eat up comments */
@@ -1938,7 +2041,7 @@ time_interval{SIGNED_FLOATS_OR_WORDS} {fprintf(stderr,"time_interval is obsolete
 
 
 <include>[ \t]*      /* eat the whitespace */
-<include>[^ \t\n]+   { /* got the include file name */
+<include>{WORD}   { /* got the include file name */
         if (include_stack_ptr >= MAX_INCLUDE_DEPTH) {
             fprintf (stderr, "Includes nested too deeply");
             exit (1);
@@ -1946,12 +2049,16 @@ time_interval{SIGNED_FLOATS_OR_WORDS} {fprintf(stderr,"time_interval is obsolete
 
         include_stack[include_stack_ptr++] = YY_CURRENT_BUFFER;
 
-        yyin = fopen(yytext, "r");
+        char *tfname;
+        tfname = yytext2string(yytext, 1, 1);
+        yyin = fopen(tfname, "r");
 
         if (!yyin) {
-            fprintf (stderr, "Error including %s\n", yytext);
+            fprintf (stderr, "Error including %s\n", tfname);
+            free(tfname);
             exit(1);
         }
+	free(tfname);
 
         yy_switch_to_buffer (yy_create_buffer (yyin, YY_BUF_SIZE));
 
@@ -2156,10 +2263,10 @@ The various input parameters are described in detail below.
 \option{aerosol_king_byrne}
 	Scale the aerosol optical depth using the King Byrne formula \citep{king1976}:
 	\begin{equation}
-	\tau = e^{\alpha_0} \cdot \lambda^{\alpha_1} \lambda^{-\alpha}
-	\end{equation}
+                \tau(\lambda)=e^{\alpha_0} \cdot \lambda^{\alpha_1} \cdot \lambda^{\alpha_2 ln(\lambda)} 
+        \end{equation}
 	where $\lambda$ is in units of micrometer \citep{Angstrom1929}. Specify 
-	the King Byrne $alpha_0$ $alpha_1$ $alpha_2$ coefficients by
+	the King Byrne $alpha_0$, $alpha_1$ and $alpha_2$ coefficients by
 	\fcode{
 	   aerosol\_king\_byrne alpha_0 alpha_1 alpha_2
 	}
@@ -2179,13 +2286,6 @@ The various input parameters are described in detail below.
 	Per default the aerosol profile is shifted upwards
 	and remains unchanged. 
 		
-\option{aerosol_refrac_index}
-        Calculate optical properties from size distribution and index of refraction using Mie
-        theory. Here is an exception from the rule that ALL values defined above are overwritten
-        because the optical thickness profile is re-scaled so that the optical thickness
-        at the first internal wavelength is unchanged. It is done that way to give the user an
-        easy means of specifying the optical thickness at a given wavelength.
-        
 \option{aerosol_season}
 	Specify season to get appropriate aerosol profile.
 	\fcode{
@@ -2207,13 +2307,6 @@ The various input parameters are described in detail below.
 	   aerosol\_set\_tau\_at\_wvl lambda tau
 	}
 		
-\option{aerosol_sizedist_file}
-        Calculate optical properties from size distribution and index of refraction using Mie
-        theory. Here is an exception from the rule that ALL values defined above are overwritten
-        because the optical thickness profile is re-scaled so that the optical thickness
-        at the first internal wavelength is unchanged. It is done that way to give the user an
-        easy means of specifying the optical thickness at a given wavelength.
-        
 \option{aerosol_species_file}
 	Specify mass density profiles of a mixture of aerosol types. 
 	\fcode{
@@ -2221,8 +2314,9 @@ The various input parameters are described in detail below.
 	}
 	where \code{aero\_1} to \code{aero\_n} are the aerosol species to be included. 
 	For each of these species, the optical properties are read from the 
-	\code{aerosol\_species\_library}, e.g. the OPAC data set provided with 
-	libRadtran. The profile file needs to include vertical profiles for each
+	\code{aerosol\_species\_library}. If \code{aerosol\_species\_library} is not definded, the default library OPAC which can be obtained from the   
+	libRadtran website is used.
+        The profile file needs to include vertical profiles for each
 	of these species. This file can be either in \emph{netCDF}-format 
 	(automatically recognized filename extension \code{.nc} or \code{.cdf}) 
 	or in ASCII format. The format of the ASCII file is: 
@@ -2271,9 +2365,10 @@ The various input parameters are described in detail below.
 	species, has to be provided. The netcdf format is the one produced by 
 	the {\sl libRadtran} \code{mie} tool.
 	 
-	At the libRadtran webpage we provide the OPAC data set 
-	\citep{hess98:_optic_proper_aeros_cloud}
-	which can be directly used with \code{uvspec}: 
+        The default library is OPAC 
+        \citep{hess98:_optic_proper_aeros_cloud}, which is provided on 
+	the libRadtran webpage 
+	\citep{hess98:_optic_proper_aeros_cloud}:
 	\fcode{
 	aerosol\_species\_library OPAC
 	}
@@ -2317,28 +2412,27 @@ The various input parameters are described in detail below.
 	\end{description}
 		
 \option{albedo}
-	The Lambertian surface albedo
-	\fcode{
-	   albedo value
-	}
-	where \code{value} is a number between 0.0 and 1.0,
-	constant for all wavelengths. For wavelength dependent surface albedo 
-	use \code{albedo\_file}. The default albedo is 0.0.
-		
+    The Lambertian surface albedo
+    \fcode{
+        albedo value
+    }
+    where \code{value} is a number between 0.0 and 1.0,
+    constant for all wavelengths. For wavelength dependent surface albedo 
+    use \code{albedo\_file}. The default albedo is 0.0.
+        
 \option{albedo_file}
-	Location of surface albedo file for wavelength dependent surface albedo. 
-	\fcode{
-	albedo\_file file
-	}
-	The file must have two columns.
-	Column 1 is the wavelength in nm, and column 2 the corresponding 
-	Lambertian surface albedo. An arbitrary wavelength grid may be chosen as the 
-	albedo will be interpolated linearely to the wavelength grid used for the 
-	radiation calculation. Comments start with \code{\#}. Empty lines are ignored.
-	A large collection of spectral albedos are available e.g. at http://speclib.jpl.nasa.gov/ 
-	\citep{Baldridge2009}.
-		
-\undocumented{
+    Location of surface albedo file for wavelength dependent surface albedo. 
+    \fcode{
+    albedo\_file file
+    }
+    The file must have two columns.
+    Column 1 is the wavelength in nm, and column 2 the corresponding 
+    Lambertian surface albedo. An arbitrary wavelength grid may be chosen as the 
+    albedo will be interpolated linearely to the wavelength grid used for the 
+    radiation calculation. Comments start with \code{\#}. Empty lines are ignored.
+    A large collection of spectral albedos are available e.g. at http://speclib.jpl.nasa.gov/ 
+    \citep{Baldridge2009}.
+        
 \option{albedo_library}
 	Albedo libraries are a collection of spectral albedos of different surface types. 
 	This option must be used either with \code{bdrf_rpv_type} 
@@ -2393,7 +2487,7 @@ The various input parameters are described in detail below.
 	radiation calculation. Comments start with \code{\#}. Empty lines are ignored.
 	This option is similar to \code{albedo_file}, except that it offers an
 	easy way to use the option \code{surface_type_map} in combinition with albedo files.
-		}
+		
 \undocumented{
 \option{albedo_map}
 	\emph{This option is preliminary and still subject to change (no wavelength dependency yet)!}
@@ -2416,39 +2510,39 @@ The various input parameters are described in detail below.
 	will be selected (or linear interpolated if \code{time_interpolate} is switched on). 
 		}
 \option{altitude}
-	Set the bottom level in the model atmosphere provided in 
-	\code{atmosphere\_file} to be at the given altitude above sea level (km).
-	\fcode{
-	altitude 0.73   \# Altitude of IFU, Garmisch-Partenkirchen 
-	}
-	The profiles of pressure, temperature, molecular absorbers, 
-	ice and water clouds are cut at the specified altitude. 
-	The aerosol profile is not affected by \code{altitude} but starts
-	right from the model surface. This is a convenient way for the user to calculate the 
-	radiation at other altitudes than sealevel. Note that \code{altitude} is very different
-	from \code{zout} where the radiation is calculated at an altitude of zout
-	above the surface. E.g. to calculate the radiation field 1 km above the surface 
-	at a location at 0.73 km above sealevel, one would specify '\code{altitude} 0.73' 
-	and '\code{zout} 1.0'.
-	If an altitude is specified which is below the lowest level in the 
-	\code{atmosphere\_file}, the atmospheric profiles are extrapolated assuming a constant 
-	gradient for temperature and mixing ratios.
-	A second optional argument may be given to \code{altitude} as e.g.
-	\fcode{
-	altitude 0.73 0.5
-	}
-	Here the bottom level will be at 0.73 km and the vertical resolution
-	of the model atmosphere will be redistributed to have a spacing
-	between levels specified by the second number, here 0.5 km, starting
-	however from 0km. (Levels 0.73, 1., 1.5 ... will be added to the
-	original atmosphere grid and optical properties are devided into the
-	new layers. In order to use interpolated properties use
-	\code{zout\_interpolate}.  See verbose output for details.)  Be aware
-	that specifying a fine vertical spacing will produce many layers thus
-	increasing the computing time. Also the radiative transfer equation
-	solvers implemented in Fortran 77 might need to have some array sizes
-	increased (see \file{src\_f/DISORT.MXD}).
-		
+    Set the bottom level in the model atmosphere provided in 
+    \code{atmosphere\_file} to be at the given altitude above sea level (km).
+    \fcode{
+    altitude 0.73   \# Altitude of IFU, Garmisch-Partenkirchen 
+    }
+    The profiles of pressure, temperature, molecular absorbers, 
+    ice and water clouds are cut at the specified altitude. 
+    The aerosol profile is not affected by \code{altitude} but starts
+    right from the model surface. This is a convenient way for the user to calculate the 
+    radiation at other altitudes than sealevel. Note that \code{altitude} is very different
+    from \code{zout} where the radiation is calculated at an altitude of zout
+    above the surface. E.g. to calculate the radiation field 1 km above the surface 
+    at a location at 0.73 km above sealevel, one would specify '\code{altitude} 0.73' 
+    and '\code{zout} 1.0'.
+    If an altitude is specified which is below the lowest level in the 
+    \code{atmosphere\_file}, the atmospheric profiles are extrapolated assuming a constant 
+    gradient for temperature and mixing ratios.
+    A second optional argument may be given to \code{altitude} as e.g.
+    \fcode{
+    altitude 0.73 0.5
+    }
+    Here the bottom level will be at 0.73 km and the vertical resolution
+    of the model atmosphere will be redistributed to have a spacing
+    between levels specified by the second number, here 0.5 km, starting
+    however from 0km. (Levels 0.73, 1., 1.5 ... will be added to the
+    original atmosphere grid and optical properties are devided into the
+    new layers. In order to use interpolated properties use
+    \code{zout\_interpolate}.  See verbose output for details.)  Be aware
+    that specifying a fine vertical spacing will produce many layers thus
+    increasing the computing time. Also the radiative transfer equation
+    solvers implemented in Fortran 77 might need to have some array sizes
+    increased (see \file{src\_f/DISORT.MXD}).
+        
 \undocumented{
 \option{altitude_map}
 	Specifies an altitude map which is used in combinition with  
@@ -2482,10 +2576,6 @@ The various input parameters are described in detail below.
 	atm\_z\_grid 0 2 4 6 8 10 20 30 ...
 	}
 		
-\undocumented{
-\option{atmos_region}
-                Very experimental option, ask Robert Buras or Luca Bugliaro for usage.
-		}
 \option{atmosphere_file}
 	Location of the atmospheric data file. 
 	\fcode{
@@ -2538,236 +2628,236 @@ The various input parameters are described in detail below.
 		
 \ifmystic{
 \option{bpdf_tsang_u10}
-	Wind speed for ocean BPDF (in m/s) at present only available with 
-	\code{rte\_solver mystic}.
-	\fcode{
-	bpdf\_tsang\_u10 value
-	}
-	The BPDF model has been developed by \citet{Tsang1985}. 
-	The wind speed is the most important parameter affecting the ocean reflectance
-	matrix. The BPDF model also takes into account shadowing by surface waves. 
-	The model has been implemented in a FORTRAN routine by Mishchenko 
-	(http://www.giss.nasa.gov/staff/mmishchenko/brf/)
-	which has been included into {\sl libRadtran}.
-		}
+    Wind speed for ocean BPDF (in m/s) at present only available with 
+    \code{rte\_solver mystic}.
+    \fcode{
+    bpdf\_tsang\_u10 value
+    }
+    The BPDF model has been developed by \citet{Tsang1985}. 
+    The wind speed is the most important parameter affecting the ocean reflectance
+    matrix. The BPDF model also takes into account shadowing by surface waves. 
+    The model has been implemented in a FORTRAN routine by Mishchenko 
+    (http://www.giss.nasa.gov/staff/mmishchenko/brf/)
+    which has been included into {\sl libRadtran}.
+        }
 \option{brdf_ambrals}
-	AMBRALS (Ross-Li) BRDF, a three-parameter BRDF fit for vegetated and 
-	non-vegetated surfaces \citep{roujean1992,wanner97,lucht2000,
+    AMBRALS (Ross-Li) BRDF, a three-parameter BRDF fit for vegetated and 
+    non-vegetated surfaces \citep{roujean1992,wanner97,lucht2000,
         schaaf2002}, based on the RossThickLiSparseReciprocal
         model. The implementation is according to
         \cite{lucht2000}. See also http://www-modis.bu.edu/brdf/models.html.
-	\fcode{
-	brdf\_ambrals variable value 
-	}
-	\code{variable} can be one of the following:
-	\begin{description}
+    \fcode{
+    brdf\_ambrals variable value 
+    }
+    \code{variable} can be one of the following:
+    \begin{description}
         \item[iso] f\_iso, Eq. (37) \cite{lucht2000}.
-	\item[vol] f\_vol, Eq. (37) \cite{lucht2000}.
-	\item[geo] f\_geo, Eq. (37) \cite{lucht2000}.
-	\end{description}
+    \item[vol] f\_vol, Eq. (37) \cite{lucht2000}.
+    \item[geo] f\_geo, Eq. (37) \cite{lucht2000}.
+    \end{description}
         The hot spot correction factor introduced by \cite{maignan2004}
         can be turned on by the option \code{brdf\_ambrals\_hotspot}.
         May be combined with \ifmystic{\code{mystic}},
-	\code{disort}, and \code{fdisort2}.
-		
+    \code{disort}, and \code{fdisort2}.
+        
 \option{brdf_ambrals_file}
-	        4 column file, containing the AMBRALS (Ross-Li) BDRF
-	parameterization, see \code{brdf\_ambrals}.
-	\fcode{
-	brdf\_ambrals\_file file
-	}
-	This option is only supported with
-	solvers: \code{disort}\ifmystic{ and \code{rte\_solver
-	mystic}}. The columns of the input file are wavelength
-	[nm], iso, vol, and geo.  The parameters are interpolated linearly to
-	the internal wavelength grid.  To make sure that the results are
-	reasonable, specify the Ambrals data on a wavelength grid similar or equal
-	to that used internally for the radiative transfer calculation!
-		
+            4 column file, containing the AMBRALS (Ross-Li) BDRF
+    parameterization, see \code{brdf\_ambrals}.
+    \fcode{
+    brdf\_ambrals\_file file
+    }
+    This option is only supported with
+    solvers: \code{disort}\ifmystic{ and \code{rte\_solver
+    mystic}}. The columns of the input file are wavelength
+    [nm], iso, vol, and geo.  The parameters are interpolated linearly to
+    the internal wavelength grid.  To make sure that the results are
+    reasonable, specify the Ambrals data on a wavelength grid similar or equal
+    to that used internally for the radiative transfer calculation!
+        
 \option{brdf_ambrals_hotspot}
-	Turn on hot spot correction factor by \cite{maignan2004} when using the AMBRALS (Ross-Li) BRDF.
-		
+    Turn on hot spot correction factor by \cite{maignan2004} when using the AMBRALS (Ross-Li) BRDF.
+        
 \option{brdf_cam}
-	Set \citet{cox54a,cox54b} ocean BRDF properties.
-	\fcode{
-	brdf\_cam variable value
-	}
-	\code{variable} can be one of the following:
-	\begin{description}
-	\parameter{pcl} 
-	Pigment concentration for \citet{cox54a,cox54b} ocean BRDF (in mg/m$^{-3}$).
-	The default value is 0.01 mg/m$^{-3}$. 
-	\parameter{sal}
-	Salinity for \citet{cox54a,cox54b} ocean BRDF (in "per mille", 0.1\%; this 
+    Set \citet{cox54a,cox54b} ocean BRDF properties.
+    \fcode{
+    brdf\_cam variable value
+    }
+    \code{variable} can be one of the following:
+    \begin{description}
+    \parameter{pcl} 
+    Pigment concentration for \citet{cox54a,cox54b} ocean BRDF (in mg/m$^{-3}$).
+    The default value is 0.01 mg/m$^{-3}$. 
+    \parameter{sal}
+    Salinity for \citet{cox54a,cox54b} ocean BRDF (in "per mille", 0.1\%; this 
         unit is equivalent to the other common units for salinity, 
         ppt - parts per thousand, psu - practical salinity unit).
-	The default value is 34.3. 
-	\parameter{u10}
-	Wind speed for \citet{cox54a,cox54b} ocean BRDF (in m/s).
-	The wind speed is the most important parameter affecting ocean BRDF.  The
+    The default value is 34.3. 
+    \parameter{u10}
+    Wind speed for \citet{cox54a,cox54b} ocean BRDF (in m/s).
+    The wind speed is the most important parameter affecting ocean BRDF.  The
         minimum allowed wind speed is 1 m/s because otherwise the strong
         specular reflection causes numerical problems. If a lower value is
         specified, the wind speed is automatically set to 1m/s.
-	\parameter{uphi}
-	Wind direction for \citet{cox54a,cox54b} ocean BRDF.
-	Default value is 0 degrees,
+    \parameter{uphi}
+    Wind direction for \citet{cox54a,cox54b} ocean BRDF.
+    Default value is 0 degrees,
         which is wind from the South. 90 degrees corresponds to wind from the West, etc. (Honestly, this was
         never truly validated. It could possibly be that 0 is wind from the North, 90 is wind from the East, etc.)
-	The option is only implemented for the \code{mystic} solver. 
+    The option is only implemented for the \code{mystic} solver. 
         \end{description}
 
-	At present only available with \code{rte\_solver disort}, 
+    At present only available with \code{rte\_solver disort}, 
         \ifmystic{\code{rte\_solver mystic}}
         and \code{rte\_solver fdisort2}.  The
         number of streams (\code{number\_of\_streams}) is automatically increased to 16 if
         \code{cox\_and\_munk} BRDF is switched on, to avoid numerical
         problems.
-	To switch on Cox and Munk BRDF,
+    To switch on Cox and Munk BRDF,
         specify any of the \code{brdf\_cam} options and define at least
         \code{brdf\_cam u10}.
-		
+        
 \option{brdf_cam_solar_wind}
-	Use old definition of wind direction for Monte Carlo simulations. If this switch is set,
-	the wind azimuth is identical to the incoming photon azimuth. Else, the wind azimuth is set by
-	\code{brdf\_cam uphi} or is 0 by default.
-		
+    Use old definition of wind direction for Monte Carlo simulations. If this switch is set,
+    the wind azimuth is identical to the incoming photon azimuth. Else, the wind azimuth is set by
+    \code{brdf\_cam uphi} or is 0 by default.
+        
 \option{brdf_hapke}
 
-	Wavelength-independent Hapke BRDF values.
+    Wavelength-independent Hapke BRDF values.
         Hapke is a parameterization of extraterrestial solid bodies such as
         the moon, asteroids or the inner planets by \cite{hapke1993}.
-	\fcode{
-	brdf\_hapke variable value
-	}
-	\code{variable} can be one of the following:
-	\begin{description}
-	\item[w] Single scattering albedo of surface.
-	\item[B0] Hot spot factor.
-	\item[h] Surface roughness parameter.
-	\end{description}
-		
+    \fcode{
+    brdf\_hapke variable value
+    }
+    \code{variable} can be one of the following:
+    \begin{description}
+    \item[w] Single scattering albedo of surface.
+    \item[B0] Hot spot factor.
+    \item[h] Surface roughness parameter.
+    \end{description}
+        
 \option{brdf_hapke_file}
-	        4 column file, containing the Hapke BDRF
-	        parameterization, see \code{brdf\_hapke}.
-	\fcode{
-	brdf\_hapke\_file file
-	}
-	This option is only supported with
-	solvers: \code{disort}\ifmystic{ and \code{rte\_solver
-	mystic}}. The columns of the input file are wavelength
-	[nm], w, B0, and h.  The parameters are interpolated linearly to
-	the internal wavelength grid.  To make sure that the results are
-	reasonable, specify the Hapke data on a wavelength grid similar or equal
-	to that used internally for the radiative transfer calculation!
-		
+            4 column file, containing the Hapke BDRF
+            parameterization, see \code{brdf\_hapke}.
+    \fcode{
+    brdf\_hapke\_file file
+    }
+    This option is only supported with
+    solvers: \code{disort}\ifmystic{ and \code{rte\_solver
+    mystic}}. The columns of the input file are wavelength
+    [nm], w, B0, and h.  The parameters are interpolated linearly to
+    the internal wavelength grid.  To make sure that the results are
+    reasonable, specify the Hapke data on a wavelength grid similar or equal
+    to that used internally for the radiative transfer calculation!
+        
 \undocumented{
 \option{brdf_rossli}
         This is the \cite{Lin2015} implementation of the Ross-Li (AMBRALS) BRDF, see also 
         \code{brdf\_ambrals} BRDF. For unknown reasons, these formulas
         differ in their overall factors of the three terms from the factors in
         \cite{lucht2000}. Identical results can be obtained by using: f\_iso=$\pi$ k\_iso, f\_geo=$\pi$ k\_geo, f\_vol = 4 k\_vol / 3.
-	\fcode{
-	brdf\_rossli variable value 
-	}
-	\code{variable} can be one of the following:
-	\begin{description}
-	\item[iso] k\_iso, Eq. (31) \cite{Lin2015}.
-	\item[vol] k\_vol, Eq. (31) \cite{Lin2015}.
-	\item[geo] k\_geo, Eq. (31) \cite{Lin2015}.
-	\end{description}
+    \fcode{
+    brdf\_rossli variable value 
+    }
+    \code{variable} can be one of the following:
+    \begin{description}
+    \item[iso] k\_iso, Eq. (31) \cite{Lin2015}.
+    \item[vol] k\_vol, Eq. (31) \cite{Lin2015}.
+    \item[geo] k\_geo, Eq. (31) \cite{Lin2015}.
+    \end{description}
         The hot spot correction factor introduced by \cite{maignan2004}
         can be turned on by the option \code{brdf\_rossli\_hotspot}.
         May be combined with \ifmystic{\code{mystic}},
-	\code{disort}, and \code{fdisort2}.
-		}
+    \code{disort}, and \code{fdisort2}.
+        }
 \undocumented{
 \option{brdf_rossli_file}
         4 column file, containing the Ross-Li (AMBRALS) BDRF
         parameterization, see \code{brdf\_rossli} and \code{brdf\_ambrals\_file}.
-		}
+        }
 \undocumented{
 \option{brdf_rossli_hotspot}
-	Turn on hot spot correction factor by \cite{maignan2004} when using the Ross-Li (AMBRALS) BRDF.
-		}
+    Turn on hot spot correction factor by \cite{maignan2004} when using the Ross-Li (AMBRALS) BRDF.
+        }
 \option{brdf_rpv}
 
-	Wavelength independent RPV values, see \code{brdf\_rpv\_file}.
-	\fcode{
-	brdf\_rpv variable value
-	}
-	\code{variable} can be one of the following:
-	\begin{description}
-	\item[k] Overwrite the wavelength-dependent
-	k value defined in \code{brdf\_rpv\_file}.
-	\item[rho0] Overwrite the wavelength-dependent
-	rpv0 value defined in \code{brdf\_rpv\_file}.
-	\item[theta] Overwrites the wavelength-dependent
-	theta value defined in \code{brdf\_rpv\_file}.
-	\item[sigma] Constant RPV sigma, to be used for snow \citep{Degunther2000b}.
-	\item[t1] Constant RPV t1, to be used for snow \citep{Degunther2000b}.
-	\item[t2] Constant RPV t2, to be used for snow \citep{Degunther2000b}.
-	\item[scale] Apply a constant scaling factor for the RPV BRDF. 
-	Required e.g. if the the albedo should be set to a certain value. This
-	factor is only used by \code{rte\_solver disort}, \code{rte\_solver
-	fdisort2}\ifmystic{ and \code{rte\_solver mystic}}.
-	\end{description}
-		
+    Wavelength independent RPV values, see \code{brdf\_rpv\_file}.
+    \fcode{
+    brdf\_rpv variable value
+    }
+    \code{variable} can be one of the following:
+    \begin{description}
+    \item[k] Overwrite the wavelength-dependent
+    k value defined in \code{brdf\_rpv\_file}.
+    \item[rho0] Overwrite the wavelength-dependent
+    rpv0 value defined in \code{brdf\_rpv\_file}.
+    \item[theta] Overwrites the wavelength-dependent
+    theta value defined in \code{brdf\_rpv\_file}.
+    \item[sigma] Constant RPV sigma, to be used for snow \citep{Degunther2000b}.
+    \item[t1] Constant RPV t1, to be used for snow \citep{Degunther2000b}.
+    \item[t2] Constant RPV t2, to be used for snow \citep{Degunther2000b}.
+    \item[scale] Apply a constant scaling factor for the RPV BRDF. 
+    Required e.g. if the the albedo should be set to a certain value. This
+    factor is only used by \code{rte\_solver disort}, \code{rte\_solver
+    fdisort2}\ifmystic{ and \code{rte\_solver mystic}}.
+    \end{description}
+        
 \option{brdf_rpv_file}
-	4 to 7 column file, containing the Rahman, Pinty, and Verstraete (RPV) BDRF
-	parameterization \citep{Rahman1993} and the snow extension by \citep{Degunther2000b}.
-	\fcode{
-	brdf\_rpv\_file file
-	}
-	Bidirectional reflectance distribution functions for a variety of
-	surfaces are given in the paper. This option is only supported with
-	solvers: \code{disort}, \code{fdisort2}\ifmystic{ and \code{rte\_solver
-	mystic}}. The columns of the input file are wavelength
-	[nm], rho0, k, and theta.  The parameters are interpolated linearly to
-	the internal wavelength grid.  To make sure that the results are
-	reasonable, specify the RPV data on a wavelength grid similar or equal
-	to that used internally for the radiative transfer calculation!
-	Optionally, a fifth column with a constant scaling factor may be
-	defined.  If it has seven columns, the fifth to seventh are sigma, t1,
-	t2, and if it has eight, the eighth is scale again.
-		
+    4 to 7 column file, containing the Rahman, Pinty, and Verstraete (RPV) BDRF
+    parameterization \citep{Rahman1993} and the snow extension by \citep{Degunther2000b}.
+    \fcode{
+    brdf\_rpv\_file file
+    }
+    Bidirectional reflectance distribution functions for a variety of
+    surfaces are given in the paper. This option is only supported with
+    solvers: \code{disort}, \code{fdisort2}\ifmystic{ and \code{rte\_solver
+    mystic}}. The columns of the input file are wavelength
+    [nm], rho0, k, and theta.  The parameters are interpolated linearly to
+    the internal wavelength grid.  To make sure that the results are
+    reasonable, specify the RPV data on a wavelength grid similar or equal
+    to that used internally for the radiative transfer calculation!
+    Optionally, a fifth column with a constant scaling factor may be
+    defined.  If it has seven columns, the fifth to seventh are sigma, t1,
+    t2, and if it has eight, the eighth is scale again.
+        
 \option{brdf_rpv_library}
-	The rpv libraries are collections of spectral BRDFs of different surface types, 
-	This option must be used either with \code{brdf\_rpv\_type} 
-	or \code{surface\_type\_map}, in order to select the specific surface type.
-				
-	For using a \code{brdf\_rpv\_library} write 
-	\fcode{
-	brdf\_rpv\_library library\_path 
-	}
-	where \code{library\_path} is the path of the directory, where the BRDF data is stored. The files are 
-	expected to have the names \code{IGBP.01.rpv, IGBP.02.rpv, ...} If \code{brdf\_rpv\_type 1} is specified
-	the BRDF from \code{IGBP.01.rpv} will be used, and so on.
-	Each file must have the structure like an \code{brdf\_rpv\_file}.
-	(This option is quite the same as \code{brdf\_rpv\_file}, except that it offers you an
-	easy way to use the option \code{surface\_type\_map} in combinition with your \code{brdf\_rpv\_files}.)
-	
-	%ak \emph{For our group there is also a built-in library for IGBP surface types.}
-	\fcode{
-	brdf\_rpv\_library IGBP
-	}
-	The built-in library contains the first 17 surface types see
-	\code{albedo\_library}.  The data is given for the wavelengths 443nm,
-	565nm, 670nm, and 865nm. Stay near this wavelength in order to get
-	reasonable results. In future this the rpv-library will be NDVI
-	dependent, but until now the most common NDVI class is selected
-	automatically.
-		
+    The rpv libraries are collections of spectral BRDFs of different surface types, 
+    This option must be used either with \code{brdf\_rpv\_type} 
+    or \code{surface\_type\_map}, in order to select the specific surface type.
+                
+    For using a \code{brdf\_rpv\_library} write 
+    \fcode{
+    brdf\_rpv\_library library\_path 
+    }
+    where \code{library\_path} is the path of the directory, where the BRDF data is stored. The files are 
+    expected to have the names \code{IGBP.01.rpv, IGBP.02.rpv, ...} If \code{brdf\_rpv\_type 1} is specified
+    the BRDF from \code{IGBP.01.rpv} will be used, and so on.
+    Each file must have the structure like an \code{brdf\_rpv\_file}.
+    (This option is quite the same as \code{brdf\_rpv\_file}, except that it offers you an
+    easy way to use the option \code{surface\_type\_map} in combinition with your \code{brdf\_rpv\_files}.)
+
+    %ak \emph{For our group there is also a built-in library for IGBP surface types.}
+    \fcode{
+    brdf\_rpv\_library IGBP
+    }
+    The built-in library contains the first 17 surface types see
+    \code{albedo\_library}.  The data is given for the wavelengths 443nm,
+    565nm, 670nm, and 865nm. Stay near this wavelength in order to get
+    reasonable results. In future this the rpv-library will be NDVI
+    dependent, but until now the most common NDVI class is selected
+    automatically.
+        
 \option{brdf_rpv_type}
-	With this option the (RPV) BRDF surface type is selected.
-	This option can be used with \code{albedo\_library} in order to select a spectral albedo 
-	or with \code{brdf\_rpv\_library} in order to select a BRDF function.
-	\fcode{
-	brdf\_rpv\_type surface\_type\_number
-	}
-	where \code{surface\_type\_number} is an integer starting from 0,
-	where 0 refers to a black surface and the following numbers to 
-	the entries in the specified \code{library}.
-		
+    With this option the (RPV) BRDF surface type is selected.
+    This option can be used with \code{albedo\_library} in order to select a spectral albedo 
+    or with \code{brdf\_rpv\_library} in order to select a BRDF function.
+    \fcode{
+    brdf\_rpv\_type surface\_type\_number
+    }
+    where \code{surface\_type\_number} is an integer starting from 0,
+    where 0 refers to a black surface and the following numbers to 
+    the entries in the specified \code{library}.
+        
 \undocumented{
 \option{ck_fu_h2o_continuum}
 	Undocumented option to switch the H2O continuum on or off or select a specific 
@@ -2941,18 +3031,27 @@ The various input parameters are described in detail below.
 	\item[Molina] 		\citet{Molina1986} ozone cross section.
 	\item[Daumont]		Ozone cross section by \citet{Daumont1992}, \citet{Malicet1995}.
 	\item[Bogumil]		Ozone cross section from \citet{Bogumil2003}.
+        \item[Serdyuchenko]     Ozone cross section from Serdyuchenko.        
 	\end{description}
 	\citet{Molina1986} is default.
 
-	\parameter{no2} Choose between the various no2 cross sections.
+	\parameter{no2} Choose between the various NO2 cross sections.
 	\code{crs} is one of:
 	\begin{description}
-	\item[Burrows]		\citet{Burrows1998} no2 cross section.
-	\item[Bogumil]		no2 cross section from \citet{Bogumil2003}.
+	\item[Burrows]		\citet{Burrows1998} NO2 cross section.
+	\item[Bogumil]		NO2 cross section from \citet{Bogumil2003}.
+        \item[Vandaele]         NO2 cross section from Vandaele et al.
 	\end{description}
 	\citet{Burrows1998} is default.
 
-	\end{description}
+        \parameter{o4} Choose between the various O4 cross sections.
+	\code{crs} is one of:
+	\begin{description}        
+        \item[Greenblatt]     O4 cross section by \citet{greenblatt1990}.
+        \item[Thalman]       O4 cross section by \citet{thalman2013}.
+        \end{description}
+
+        \end{description}        
 		
 \option{data_files_path}
 	The path to the directory where all \code{uvspec} internal data files live, e.g.
@@ -2964,44 +3063,44 @@ The various input parameters are described in detail below.
 	The default for \code{path} is \code{../data/}.
 		
 \option{day_of_year}
-	Integer, to correct the calculated radiation quantities for the 
-	Sun-Earth distance for the specified Julian day (1-365). 
-	\fcode{
-	   day_of_year value
-	}
-	If not specified, the Earth-Sun distance is 1 AU (i.e. equinox
-	distance), that is, no correction is applied to the extraterrestrial
-	irradiance \code{source solar file}. Alternatively \code{time} may be used
-	for that purpose.
-		
+    Integer, to correct the calculated radiation quantities for the 
+    Sun-Earth distance for the specified Julian day (1-365). 
+    \fcode{
+       day_of_year value
+    }
+    If not specified, the Earth-Sun distance is 1 AU (i.e. equinox
+    distance), that is, no correction is applied to the extraterrestrial
+    irradiance \code{source solar file}. Alternatively \code{time} may be used
+    for that purpose.
+        
 \option{deltam}
-	Turn delta-M scaling on/off. Set to either \code{on} or
-	\code{off}. Note that for the \code{rte_solver disort} and
-	\code{rte_solver fdisort2} delta-M scaling is hardcoded to be always
-	on.
-		
+    Turn delta-M scaling on/off. Set to either \code{on} or
+    \code{off}. Note that for the \code{rte_solver disort} and
+    \code{rte_solver fdisort2} delta-M scaling is hardcoded to be always
+    on.
+        
 \option{disort_intcor}
-	Intensity correction method for \code{rte_solver disort} or
-	\code{rte_solver fdisort2}. Valid options are \code{phase}, i.e.~the
-	phase function is used for the Nakajima intensity correction, and
-	\code{moments}, i.e.~the Legendre moments are used for the
-	correction. Optionally, the option \code{off} turns off the intensity
-	correction. Default is \code{phase}.
-		
+    Intensity correction method for \code{rte_solver disort} or
+    \code{rte_solver fdisort2}. Valid options are \code{phase}, i.e.~the
+    phase function is used for the Nakajima intensity correction, and
+    \code{moments}, i.e.~the Legendre moments are used for the
+    correction. Optionally, the option \code{off} turns off the intensity
+    correction. Default is \code{phase}.
+        
 \undocumented{
 \option{disort_spherical_albedo}
-	Calculate spherical albedo using \code{disort}. When this option is enabled,
-	only the spherical albedo is calculated. The output is enabled by 
-	\fcode{output_user spher_alb}
-		}
+    Calculate spherical albedo using \code{disort}. When this option is enabled,
+    only the spherical albedo is calculated. The output is enabled by 
+    \fcode{output_user spher_alb}
+        }
 \option{earth_radius}
-	Specify the earth radius in km. 
-	\fcode{
-	    earth_radius value
-	}
-	This is needed by all solvers in spherical geometry\ifmystic{, e.g. \code{mystic}
-	in combination with option \code{mc_spherical}}. The default value is 6370 km.
-		
+    Specify the earth radius in km. 
+    \fcode{
+        earth_radius value
+    }
+    This is needed by all solvers in spherical geometry\ifmystic{, e.g. \code{mystic}
+    in combination with option \code{mc_spherical}}. The default value is 6370 km.
+        
 \undocumented{
 \option{ECHAM_atmosphere_file}
 Undocumented option.
@@ -3059,6 +3158,7 @@ ECMWF_ic_reff Ou
 }
 The default option is Ou.
 }
+
 
 \undocumented{
 \option{ECMWF_levels_only}
@@ -3144,34 +3244,34 @@ The default option is Ou.
 	the filter function.
 			
 \option{fluorescence}
-	Specifies the magnitude of a bottom surface isotropic fluorescence source.
-	\fcode{
-	   fluorescence value
-	}
-	where \code{value} is a number greater or equal to 0.0, 
-	constant for all wavelengths.
-	Must be used together with  \code{source solar file}. The units of the fluorescence should 
-	obviously be the same as for the solar source in \code{source solar file}.
-	For wavelength dependent fluorescence use \code{fluorescence\_file}. The default fluorescence is 0.0. 
-	Currently only works with the \code{disort} solver.
-		
+    Specifies the magnitude of a bottom surface isotropic fluorescence source.
+    \fcode{
+        fluorescence value
+    }
+    where \code{value} is a number greater or equal to 0.0, 
+    constant for all wavelengths.
+    Must be used together with  \code{source solar file}. The units of the fluorescence should 
+    obviously be the same as for the solar source in \code{source solar file}.
+    For wavelength dependent fluorescence use \code{fluorescence\_file}. The default fluorescence is 0.0. 
+    Currently only works with the \code{disort} solver.
+        
 \option{fluorescence_file}
-	Location of fluorescence file for wavelength dependent fluorescence emission 
-	from the bottom surface. 
-	\fcode{
-	   fluorescence\_file file
-	}
-	The file must have two columns.
-	Column 1 is the wavelength in nm, and column 2 the corresponding 
-	fluorescence. An arbitrary wavelength grid may be chosen as the 
-	fluorescence will be interpolated linearely to the wavelength grid used for the 
-	radiation calculation. Comments start with \code{\#}. Empty lines are ignored.
-	Currently only works with the \code{disort} solver. Furthermore. if \code{raman} is 
-	not set, \code{wavelength\_grid\_file} 
-	must be specified with the same resolution as the \code{source solar file}, and the first value
-	must be the value specified by \code{wavelength}. The units of the fluorescence should 
-	obviously be the same as for the \code{source solar file}.
-		
+    Location of fluorescence file for wavelength dependent fluorescence emission 
+    from the bottom surface. 
+    \fcode{
+        fluorescence\_file file
+    }
+    The file must have two columns.
+    Column 1 is the wavelength in nm, and column 2 the corresponding 
+    fluorescence. An arbitrary wavelength grid may be chosen as the 
+    fluorescence will be interpolated linearely to the wavelength grid used for the 
+    radiation calculation. Comments start with \code{\#}. Empty lines are ignored.
+    Currently only works with the \code{disort} solver. Furthermore. if \code{raman} is 
+    not set, \code{wavelength\_grid\_file} 
+    must be specified with the same resolution as the \code{source solar file}, and the first value
+    must be the value specified by \code{wavelength}. The units of the fluorescence should 
+    obviously be the same as for the \code{source solar file}.
+        
 \option{heating_rate}
 	Calculation of heating rates. Output is only provided at altitudes specified by \code{zout}.
 	To get heating rate profiles a number of altitudes must thus be specified by \code{zout}.
@@ -3208,122 +3308,122 @@ The default option is Ou.
 	where it is written, up to next \emph{output level} above!
 		
 \option{ic_file}
-	Location of file defining ice cloud properties. 
-	\fcode{
-	ic\_file type file
-	}
-	
-	\code{type} defines the file type, which is identical to \code{wc\_file type}.
-	See \code{wc\_file} for choices of \code{type} and a description on the file structures.
-		
+    Location of file defining ice cloud properties. 
+    \fcode{
+    ic\_file type file
+    }
+    
+    \code{type} defines the file type, which is identical to \code{wc\_file type}.
+    See \code{wc\_file} for choices of \code{type} and a description on the file structures.
+        
 \option{ic_fu}
-	\fcode{
-	ic\_fu reff\_def on/off
-	}
-	Specify wich definition of the effective radius is used.
-	
-	If \code{on} the parameterization uses the original definition of the effective radius
-	as specified in \citet{Fu1996,Fu1998}. 
+    \fcode{
+    ic\_fu reff\_def on/off
+    }
+    Specify wich definition of the effective radius is used.
+    
+    If \code{on} the parameterization uses the original definition of the effective radius
+    as specified in \citet{Fu1996,Fu1998}. 
 
-	Default is \code{off}. The same definition of the effective radius is used as the \citet{Key2002},
-	\citet{Yang2000} and \citet{baum05a:_bulk,baum05b:_bulk}
-	parameterizations; see discussion of \code{ic\_properties}.
+    Default is \code{off}. The same definition of the effective radius is used as the \citet{Key2002},
+    \citet{Yang2000} and \citet{baum05a:_bulk,baum05b:_bulk}
+    parameterizations; see discussion of \code{ic\_properties}.
 
-	\fcode{
-	ic\_fu deltascaling on/off
-	}
-	Specify if the \citet{Fu1996} optical properties are delta-scaled or not. 
+    \fcode{
+    ic\_fu deltascaling on/off
+    }
+    Specify if the \citet{Fu1996} optical properties are delta-scaled or not. 
 
-	If \code{on} delta-scaling is switched on.
+    If \code{on} delta-scaling is switched on.
 
-	If  \code{off} delta-scaling is switched off. The default is without delta-scaling.
-	Please note that this was changed on July 22, 2008: 
-	Before, delta-scaling was switched on by default which might have
-	caused some confusion, because irradiance calculations were not
-	consistent with the other ice cloud parameterizations implemented in
-	\code{uvspec}. 
-	Using the \citet{Fu1996} parameterization in combination with one of 
-	\code{ic\_modify} you now get
-	consistent results with all other ice cloud parameterizations.
-	
-	%THIS IS THE OLD DOCUMENTATION (BEFORE CHANGE OF DELTA-SCALING
-	%				      DEFAULT).
-	%
-	%It has been confirmed that the difference with and 
-	%without delta-scaling is typically on the order of less than 1 - 2\% 
-	%and therefore it was decided to switch delta-scaling off by default.
-	%Please note that this has nothing to do with the internal delta-scaling
-	%by the solvers: e.g. disort2 always applies it's own internal delta-scaling 
-	%anyway. (THE FOLLOWING NEEDS TO BE MODIFIED).
-	%If you define a cloud only by its microphysical properties (ice water
-	%content, effective radius), delta-scaling should certainly be switched
-	%on and you do not need to read further. 
-	%If, however, you want to
-	%use the Fu (1996) parameterization in combination with one of 
-	%\code{ic_set_tau/tau550/gg/ssa} or \code{ic_scale_gg/ssa} it might be
-	%reasonable to switch delta-scaling off and you should make sure that
-	%you understand the following. Citing from Fu (1996): "For nonspherical
-	%particles in cirrus clouds, it is found that a simple representation
-	%of the scattering phase function through the asymmetry factor is
-	%inadequate (Fu and Takano 1994). As demonstrated in appendix A, the
-	%fraction of scattered energy residing in the forward peak, f, needs to
-	%be removed from the scattering parameters to incorporate the strong
-	%forward peak contribution in multiple scattering." Or in other words,
-	%the sharp forward peak is truncated and added to the unscattered
-	%direct radiation. The remaining phase function (excluding the sharp
-	%forward peak) can be safely approximated by a Henyey-Greenstein
-	%function. The scaling implies a reduction of the optical thickness,
-	%the asymmetry parameter, and the single scattering albedo. This
-	%reduction can be rather severe, e.g. a factor of about 3 for the
-	%optical thickness in the visible spectral range. This implies
-	%seemingly inconsistent optical properties: For idential IWC content
-	%and effective radius, \code{ic_properties key/yang} would give an
-	%(unscaled) optical thickness about three times higher than
-	%\code{ic_properties fu}. The effect on the radiation field, however,
-	%will be comparable, due the consistent scaling of optical thickness,
-	%asymmetry parameter, and single scattering albedo. If you, however,
-	%adjust the optical thickness using e.g. \code{ic_set_tau}, the effect
-	%on the radiation field will be completely different because the
-	%(unscaled) optical thickness by Key (2002) has a completely different
-	%meaning as the (scaled) optical thickness by Fu (1996). In such cases
-	%it might be reasonable to switch scaling off. This is a complicated
-	%and confusing topic and it is suggested that you play around a bit
-	%with the options, read the Fu (1996) paper, and make heavy use of the
-	%\code{verbose} feature.
-		
+    If  \code{off} delta-scaling is switched off. The default is without delta-scaling.
+    Please note that this was changed on July 22, 2008: 
+    Before, delta-scaling was switched on by default which might have
+    caused some confusion, because irradiance calculations were not
+    consistent with the other ice cloud parameterizations implemented in
+    \code{uvspec}. 
+    Using the \citet{Fu1996} parameterization in combination with one of 
+    \code{ic\_modify} you now get
+    consistent results with all other ice cloud parameterizations.
+    
+    %THIS IS THE OLD DOCUMENTATION (BEFORE CHANGE OF DELTA-SCALING
+    %                     DEFAULT).
+    %
+    %It has been confirmed that the difference with and 
+    %without delta-scaling is typically on the order of less than 1 - 2\% 
+    %and therefore it was decided to switch delta-scaling off by default.
+    %Please note that this has nothing to do with the internal delta-scaling
+    %by the solvers: e.g. disort2 always applies it's own internal delta-scaling 
+    %anyway. (THE FOLLOWING NEEDS TO BE MODIFIED).
+    %If you define a cloud only by its microphysical properties (ice water
+    %content, effective radius), delta-scaling should certainly be switched
+    %on and you do not need to read further. 
+    %If, however, you want to
+    %use the Fu (1996) parameterization in combination with one of 
+    %\code{ic_set_tau/tau550/gg/ssa} or \code{ic_scale_gg/ssa} it might be
+    %reasonable to switch delta-scaling off and you should make sure that
+    %you understand the following. Citing from Fu (1996): "For nonspherical
+    %particles in cirrus clouds, it is found that a simple representation
+    %of the scattering phase function through the asymmetry factor is
+    %inadequate (Fu and Takano 1994). As demonstrated in appendix A, the
+    %fraction of scattered energy residing in the forward peak, f, needs to
+    %be removed from the scattering parameters to incorporate the strong
+    %forward peak contribution in multiple scattering." Or in other words,
+    %the sharp forward peak is truncated and added to the unscattered
+    %direct radiation. The remaining phase function (excluding the sharp
+    %forward peak) can be safely approximated by a Henyey-Greenstein
+    %function. The scaling implies a reduction of the optical thickness,
+    %the asymmetry parameter, and the single scattering albedo. This
+    %reduction can be rather severe, e.g. a factor of about 3 for the
+    %optical thickness in the visible spectral range. This implies
+    %seemingly inconsistent optical properties: For idential IWC content
+    %and effective radius, \code{ic_properties key/yang} would give an
+    %(unscaled) optical thickness about three times higher than
+    %\code{ic_properties fu}. The effect on the radiation field, however,
+    %will be comparable, due the consistent scaling of optical thickness,
+    %asymmetry parameter, and single scattering albedo. If you, however,
+    %adjust the optical thickness using e.g. \code{ic_set_tau}, the effect
+    %on the radiation field will be completely different because the
+    %(unscaled) optical thickness by Key (2002) has a completely different
+    %meaning as the (scaled) optical thickness by Fu (1996). In such cases
+    %it might be reasonable to switch scaling off. This is a complicated
+    %and confusing topic and it is suggested that you play around a bit
+    %with the options, read the Fu (1996) paper, and make heavy use of the
+    %\code{verbose} feature.
+        
 \option{ic_habit}
-	Ice crystal habit for the \citet{Yang2000}, \citet{Key2002} and
-	\code{hey} parameterizations, see also  \code{ic\_properties key/yang/hey}.
-	\fcode{
-	ic\_habit type
-	} 
-	For Key/Yang \code{type} may be one of \code{solid-column}, 
-	\code{hollow-column}, \code{rough-aggregate}, \code{rosette-4}, 
-	\code{rosette-6}, \code{plate}, \code{droxtal}, \code{dendrite}
-	and \code{spheroid}. Please note that this parameterization is only valid for
-	a restricted size range, depending on the habit (see table 1 in 
-	\citet{Key2002}. Also, some of the habits are only available for
-	wavelengths below 5 micrometer (\code{rosette-4}) while others are only available
-	for wavelengths larger than 3 micrometer (\code{droxtal}, \code{spheroid}).
+    Ice crystal habit for the \citet{Yang2000}, \citet{Key2002} and
+    \code{hey} parameterizations, see also  \code{ic\_properties key/yang/hey}.
+    \fcode{
+    ic\_habit type
+    } 
+    For Key/Yang \code{type} may be one of \code{solid-column}, 
+    \code{hollow-column}, \code{rough-aggregate}, \code{rosette-4}, 
+    \code{rosette-6}, \code{plate}, \code{droxtal}, \code{dendrite}
+    and \code{spheroid}. Please note that this parameterization is only valid for
+    a restricted size range, depending on the habit (see table 1 in 
+    \citet{Key2002}. Also, some of the habits are only available for
+    wavelengths below 5 micrometer (\code{rosette-4}) while others are only available
+    for wavelengths larger than 3 micrometer (\code{droxtal}, \code{spheroid}).
 
-	For \code{hey} the following habits can be chosen: \code{solid-column}, 
-	\code{hollow-column}, \code{rough-aggregate}, \code{rosette-6}, 
-	\code{plate}, \code{droxtal}, and the general habit mixture \code{ghm} 
+    For \code{hey} the following habits can be chosen: \code{solid-column}, 
+    \code{hollow-column}, \code{rough-aggregate}, \code{rosette-6}, 
+    \code{plate}, \code{droxtal}, and the general habit mixture \code{ghm} 
         which follows the ``recipe'' by \citet{baum05a:_bulk}. All
-	habits and the habit mixture are available for effective radii from 5 to 90 micrometers in
-	the wavelength region from 0.2 to 5 micrometers.
+    habits and the habit mixture are available for effective radii from 5 to 90 micrometers in
+    the wavelength region from 0.2 to 5 micrometers.
 
         The parameterization \code{baum\_v36} includes the general habit mixture
         \code{ghm} and the habits \code{solid-column} and \code{aggregate}, 
         all crystals modeled with severe roughness.          
-		
+        
 \option{ic_habit_yang2013}
-	Ice crystal habit for the \citet{yang2013} parameterization,
+    Ice crystal habit for the \citet{yang2013} parameterization,
         \code{ic\_properties yang2013}.
-	\fcode{
-	ic\_habit type roughness
-	} 
-	The following habits are available: \code{column\_8elements}, 
+    \fcode{
+    ic\_habit type roughness
+    } 
+    The following habits are available: \code{column\_8elements}, 
         \code{droxtal}, \code{hollow\_bullet\_rosette}, \code{hollow\_column}, 
         \code{plate}, \code{plate\_10elements}, \code{plate\_5elements}, \code{solid\_bullet\_rosette}, 
         and \code{solid\_column}.
@@ -3331,203 +3431,220 @@ The default option is Ou.
         For each habit three degrees of roughness needs to be specified, options are \code{smooth}, 
         \code{moderate} and \code{severe}.         
         
-		
+        
 \option{ic_modify}
-	Modify ice cloud optical properties.
-	\fcode{
-	ic\_modify variable scale/set value
-	}
-	This option is identical to \code{wc\_modify}.
-	Please refer to \code{wc\_modify} for a detailed description of \code{variable}.
-	
-	If you use this option in combination with the ice
-	cloud properties by \citet{Fu1996}, please make sure that you understand
-	the explanation of \code{ic\_fu}.
-		
+    Modify ice cloud optical properties.
+    \fcode{
+    ic\_modify variable scale/set value
+    }
+    This option is identical to \code{wc\_modify}.
+    Please refer to \code{wc\_modify} for a detailed description of \code{variable}.
+    
+    If you use this option in combination with the ice
+    cloud properties by \citet{Fu1996}, please make sure that you understand
+    the explanation of \code{ic\_fu}.
+        
 \option{ic_properties}
-	Defines how ice water content and effective particle radius are translated 
-	to optical properties. 
-	\fcode{
-	ic\_properties property [interpolate]
-	}
-	Possible choices for \code{property} are
-	\begin{description}
-	\parameter{fu}
-	Parameterization by \citet{Fu1996,Fu1998}, see \code{ic\_file}; 
-	this is the default setting. Note that this is a parameterization
-	which has been created to calculate fluxes but not radiances. 
-	Note also that the optical properties in the solar range provided by 
-	\citet{Fu1996} are delta-scaled properties (that is, the forward peak of
-	the phase function is truncated and optical thickness, asymmetry
-	parameter, and single scattering albedo are reduced accordingly),
-	whereas \code{uvspec} uses non delta-scaled properties unless the option
-	\code{ic\_fu deltascaling on} is specified. By default the parameterization
-	by \citet{Fu1996} is treated consistently with all other ice cloud
-	parameterizations. 
-	For wavelengths up to 4 micrometer \citet{Fu1996} is used while for wavelengths 
-	larger than 4 micrometer \citet{Fu1998} is chosen. Please note that 
-	\citet{Fu1996} is based on ray-tracing calculations while \citet{Fu1998}
-	is a mixture of ray-tracing and Mie calculations (which is required for 
-	the infrared wavelengths where the geometrical assumption does not hold).
-	Hence, both parameterizations are not fully consistent. Rather, differences
-	of some \% are to be expected in the wavelength region where both 
-	parameterizations overlap. Also, the wavelength dependence in the solar 
-	and infrared parts is treated differently: In the solar part \citep{Fu1996}
-	the optical properties are defined for wavelength bands - hence they 
-	are assumed constant within each band. In the infrared \citep{Fu1998} 
-	they are defined at certain wavelengths and linearely interpolated 
-	in between. If you use this option, please see also the
-	discussion of \code{ic\_fu deltascaling} and \code{ic\_fu reff\_def}.
-	The allowed range for the effective radius is from 9.315 -  65.120 micrometer. 
-	\parameter{echam4}
-	Use the simple two-band parameterization of the ECHAM4 climate model, described 
-	in \cite{Roeckner1996}; this is probably only meaningful if you want to compare
-	your results with ECHAM4, the two bands are 0.2 - 0.68 micrometer and 0.68 - 4.0 micrometer.
-	Within the two ECHAM4 bands, the optical properties are assumed constant.
-	\parameter{key}
-	Parameterization by \citet{Key2002}. This parameterization can also
-	be used to calculate radiances because it uses a
-	double-Henyey-Greenstein phase function which better represents both
-	forward and backward peaks. This parameterization covers the wavelength region  
-	from 0.2 to 5.0 micrometer and is available for the following \code{habit}:
-	\code{solid-column}, \code{hollow-column}, \code{rough-aggregate}, \code{rosette-4}, 
-	\code{rosette-6}, and \code{plate}.
-	\parameter{yang}
-	Parameterization similar to \citet{Key2002} but based on more recent
-	single scattering calculations. Below 3.4 micrometer it actually equals
-	the \citet{Key2002} parameterization while from 3.4 - 100 micrometer new 
-	coefficients have been calculated with much higher wavelength
-	resolution and better accuracy. Hence, \code{yang} should give a reasonably
-	consistent approximation from 0.2 - 100 micrometer, suitable for spectrally
-	resolved calculations of radiance and irradiance.
-	The covered range for the effective radius depends on the \code{ic\_habit}.
-	(In micrometer: \code{solid-column} [5.96, 84.22], \code{hollow-column} [4.97, 70.24],
-	 \code{rough-aggregate} [3.55, 108.10], \code{rosettes-4} [2.77, 45.30], 
-	\code{rosettes-6} [2.85, 46.01], \code{plate} [4.87, 48.18], \code{dendrites}
-	 [0.45, 1.88], \code{droxtal} [9.48, 293.32], 
-	\code{spheroid}  [6.58, 203.39]). 
-	\parameter{baum}
-	Use ice cloud parameterization from \citet{baum05a:_bulk,baum05b:_bulk},
-	\url{http://www.ssec.wisc.edu/\~baum/Cirrus/IceCloudModels.html}.
-	In combination with the radiative transfer solvers \code{disort}, \ifmystic{\code{montecarlo},}
-	 and \code{fdisort2}, accurate phase functions are used.
+    Defines how ice water content and effective particle radius are translated 
+    to optical properties. 
+    \fcode{
+    ic\_properties property [interpolate]
+    }
+    Possible choices for \code{property} are
+    \begin{description}
+    \parameter{fu}
+    Parameterization by \citet{Fu1996,Fu1998}, see \code{ic\_file}; 
+    this is the default setting. Note that this is a parameterization
+    which has been created to calculate fluxes but not radiances. 
+    Note also that the optical properties in the solar range provided by 
+    \citet{Fu1996} are delta-scaled properties (that is, the forward peak of
+    the phase function is truncated and optical thickness, asymmetry
+    parameter, and single scattering albedo are reduced accordingly),
+    whereas \code{uvspec} uses non delta-scaled properties unless the option
+    \code{ic\_fu deltascaling on} is specified. By default the parameterization
+    by \citet{Fu1996} is treated consistently with all other ice cloud
+    parameterizations. 
+    For wavelengths up to 4 micrometer \citet{Fu1996} is used while for wavelengths 
+    larger than 4 micrometer \citet{Fu1998} is chosen. Please note that 
+    \citet{Fu1996} is based on ray-tracing calculations while \citet{Fu1998}
+    is a mixture of ray-tracing and Mie calculations (which is required for 
+    the infrared wavelengths where the geometrical assumption does not hold).
+    Hence, both parameterizations are not fully consistent. Rather, differences
+    of some \% are to be expected in the wavelength region where both 
+    parameterizations overlap. Also, the wavelength dependence in the solar 
+    and infrared parts is treated differently: In the solar part \citep{Fu1996}
+    the optical properties are defined for wavelength bands - hence they 
+    are assumed constant within each band. In the infrared \citep{Fu1998} 
+    they are defined at certain wavelengths and linearely interpolated 
+    in between. If you use this option, please see also the
+    discussion of \code{ic\_fu deltascaling} and \code{ic\_fu reff\_def}.
+    The allowed range for the effective radius is from 9.315 -  65.120 micrometer. 
+    \parameter{echam4}
+    Use the simple two-band parameterization of the ECHAM4 climate model, described 
+    in \cite{Roeckner1996}; this is probably only meaningful if you want to compare
+    your results with ECHAM4, the two bands are 0.2 - 0.68 micrometer and 0.68 - 4.0 micrometer.
+    Within the two ECHAM4 bands, the optical properties are assumed constant.
+    \parameter{key}
+    Parameterization by \citet{Key2002}. This parameterization can also
+    be used to calculate radiances because it uses a
+    double-Henyey-Greenstein phase function which better represents both
+    forward and backward peaks. This parameterization covers the wavelength region  
+    from 0.2 to 5.0 micrometer and is available for the following \code{habit}:
+    \code{solid-column}, \code{hollow-column}, \code{rough-aggregate}, \code{rosette-4}, 
+    \code{rosette-6}, and \code{plate}.
+    \parameter{yang}
+    Parameterization similar to \citet{Key2002} but based on more recent
+    single scattering calculations. Below 3.4 micrometer it actually equals
+    the \citet{Key2002} parameterization while from 3.4 - 100 micrometer new 
+    coefficients have been calculated with much higher wavelength
+    resolution and better accuracy. Hence, \code{yang} should give a reasonably
+    consistent approximation from 0.2 - 100 micrometer, suitable for spectrally
+    resolved calculations of radiance and irradiance.
+    The covered range for the effective radius depends on the \code{ic\_habit}.
+    (In micrometer: \code{solid-column} [5.96, 84.22], \code{hollow-column} [4.97, 70.24],
+     \code{rough-aggregate} [3.55, 108.10], \code{rosettes-4} [2.77, 45.30], 
+    \code{rosettes-6} [2.85, 46.01], \code{plate} [4.87, 48.18], \code{dendrites}
+     [0.45, 1.88], \code{droxtal} [9.48, 293.32], 
+    \code{spheroid}  [6.58, 203.39]). 
+    \parameter{baum}
+    Use ice cloud parameterization from \citet{baum05a:_bulk,baum05b:_bulk},
+    \url{http://www.ssec.wisc.edu/\~baum/Cirrus/IceCloudModels.html}.
+    In combination with the radiative transfer solvers \code{disort}, \ifmystic{\code{montecarlo},}
+     and \code{fdisort2}, accurate phase functions are used.
         \parameter{baum_v36} Use cloud parameterization from
-	\citet{heymsfield2013,yang2013,baum2014} covering the 
-	spectral range from 0.2 to 100~$\mu$m and effective radii from
-	5 to 60 $\mu$m. The parameterization
-	assumes severly roughened and randomly oriented ice particles
-	and includes the full phase matrix. Three set of models are
-	available, they can be selected using \code{ic\_habit}:
-	\code{ghm} is based on a general habit mixture involving 9
-	habits, \code{solid-column} assumes severely roughened solid
-	columns, and \code{rough-aggregate} is based on severly
+    \citet{heymsfield2013,yang2013,baum2014} covering the 
+    spectral range from 0.2 to 100~$\mu$m and effective radii from
+    5 to 60 $\mu$m. The parameterization
+    assumes severly roughened and randomly oriented ice particles
+    and includes the full phase matrix. Three set of models are
+    available, they can be selected using \code{ic\_habit}:
+    \code{ghm} is based on a general habit mixture involving 9
+    habits, \code{solid-column} assumes severely roughened solid
+    columns, and \code{rough-aggregate} is based on severly
         roughened aggregates. The default is \code{solid-column}. 
-	%\parameter{baum\_hufit }
-	%Similar to the option \code{baum} but here the phase function
-	%is parameterized by 128 Legendre coefficients, calculated with the
-	%delta-fit method from 
-	%\citet{Hu2000}. This parameterization covers the region  
-	%from 0.4 to 2.2 micrometer. If high accuracy is needed e.g. in the vicinity of the halo, 
-	%the forward peak, or the backscatter peak, \code{ic\_properties baum}
-	%is recommended.
-	\parameter{hey}
-	Use pre-calculated ice cloud optical properties including full phase
-	matrices.
-	The parameterization
-	is currently only available for the spectral region from 0.2 to 5
-	micrometers. The single scattering
-	properties have been been generated by Hong Gang using the
-	models by \citet{Yang2000}. The parameterization is based on
-	simple gamma distributions 
-	\begin{equation}
-	n(r) = n_0 r^{\alpha} \exp\left(-\frac{(\alpha+3)r}{r_e}\right),
-	\end{equation}
-	where $n_0$ is found by normalization and $\alpha$ is set to 1. In case of
-	spherical particles the parameter $r_e$ would be the effective
-	radius. For aspherical particles, the parameter $r_e$ is found
-	iteratively so that the size distribution yields the required
-	effective radius. The
-	parameterization is availabe for the following habits: \code{solid-column},
-	\code{hollow-column}, \code{rough-aggregate}, \code{rosette-6},
-	\code{plate}, and \code{droxtal}. The
-	default habit is \code{solid-column}. Furthermore a general
+    %\parameter{baum\_hufit }
+    %Similar to the option \code{baum} but here the phase function
+    %is parameterized by 128 Legendre coefficients, calculated with the
+    %delta-fit method from 
+    %\citet{Hu2000}. This parameterization covers the region  
+    %from 0.4 to 2.2 micrometer. If high accuracy is needed e.g. in the vicinity of the halo, 
+    %the forward peak, or the backscatter peak, \code{ic\_properties baum}
+    %is recommended.
+    \parameter{hey}
+    Use pre-calculated ice cloud optical properties including full phase
+    matrices.
+    The parameterization
+    is currently only available for the spectral region from 0.2 to 5
+    micrometers. The single scattering
+    properties have been been generated by Hong Gang using the
+    models by \citet{Yang2000}. The parameterization is based on
+    simple gamma distributions 
+    \begin{equation}
+    n(r) = n_0 r^{\alpha} \exp\left(-\frac{(\alpha+3)r}{r_e}\right),
+    \end{equation}
+    where $n_0$ is found by normalization and $\alpha$ is set to 1. In case of
+    spherical particles the parameter $r_e$ would be the effective
+    radius. For aspherical particles, the parameter $r_e$ is found
+    iteratively so that the size distribution yields the required
+    effective radius. The
+    parameterization is availabe for the following habits: \code{solid-column},
+    \code{hollow-column}, \code{rough-aggregate}, \code{rosette-6},
+    \code{plate}, and \code{droxtal}. The
+    default habit is \code{solid-column}. Furthermore a general
         habit mixture \code{ghm} similar to the one defined by
-	\citet{baum05b:_bulk} may be selected.  For the HEY
-	parameterization the ice crystals are assumed to be smooth, in
-	contrast to the severely roughened particles assumed by
-	\code{baum_v36}. The habit can be specified using the option
-	\code{ic\_habit}.
+    \citet{baum05b:_bulk} may be selected.  For the HEY
+    parameterization the ice crystals are assumed to be smooth, in
+    contrast to the severely roughened particles assumed by
+    \code{baum_v36}. The habit can be specified using the option
+    \code{ic\_habit}.
         \parameter{yang2013} Pre-calculated ice optical properties
-	including full phase matrices for the spectral region from 0.2
-	to 99 $\mu$m. The parameterization uses single scattering data by
-	\citet{yang2013} and assumes gamma size distributions as the
-	\code{hey} parameterization. It is available for 9 habits and
-	3 degrees of roughness, which can be selected using the option
-	\code{ic\_habit\_yang2013}. 
-	%\parameter{ic-mie}
-	%Use pre-calculated Mie tables; useful for \code{mol\_abs\_param}; 
-	%the tables are expected in \code{data\_files\_path}\file{/correlated\_k/.../}.
-	%For spectral or pseudo-spectral (\code{mol\_abs\_param sbdart}) calculations, 
-	%a set of pre-calculated tables is also available; the wavelength grid points of these 
-	%data has been carefully selected such that the extinction cross section, 
-	%single scattering albedo, and the asymmetry parameter are accurate to 1\% 
-	%(compared to the fully-resolved Mie calculation) for all wavelengths
-	%between 250nm and 100 micrometer. 
-	%For spectral or pseudo-spectral
-	%calculations the optional argument \code{interpolate} has to be defined explicitely to
-	%initiate the interpolation of the optical properties to the internal wavelength grid.
-	%Please note that this option may be extremely memory-consuming because for each 
-	%internal wavelength a full set of Legendre moments of the phase function is 
-	%stored (up to several thousands). The Mie tables are not part of the standard distribution 
-	%(because of their large size) but they are freely available from http://www.libradtran.org. 
-	%Note that a Mie calculation assumes spherical ice particles, the scattering function of 
-	%which differs systematically from non-spherical particles. Hence, \code{ic\_properties mie}
-	%is usually not representative of natural ice clouds.
-	\parameter{filename}
-	Read optical properties from specified filename; file format is as produced 
-	by the \code{mie} tool of {\sl libRadtran} (see \code{output\_user netcdf}). 
-	% or by Frank Evans' \code{cloudprp}.
-	\end{description}
-	The default property is \code{fu}.
+    including full phase matrices for the spectral region from 0.2
+    to 99 $\mu$m. The parameterization uses single scattering data by
+    \citet{yang2013} and assumes gamma size distributions as the
+    \code{hey} parameterization. It is available for 9 habits and
+    3 degrees of roughness, which can be selected using the option
+    \code{ic\_habit\_yang2013}. 
+    %\parameter{ic-mie}
+    %Use pre-calculated Mie tables; useful for \code{mol\_abs\_param}; 
+    %the tables are expected in \code{data\_files\_path}\file{/correlated\_k/.../}.
+    %For spectral or pseudo-spectral (\code{mol\_abs\_param sbdart}) calculations, 
+    %a set of pre-calculated tables is also available; the wavelength grid points of these 
+    %data has been carefully selected such that the extinction cross section, 
+    %single scattering albedo, and the asymmetry parameter are accurate to 1\% 
+    %(compared to the fully-resolved Mie calculation) for all wavelengths
+    %between 250nm and 100 micrometer. 
+    %For spectral or pseudo-spectral
+    %calculations the optional argument \code{interpolate} has to be defined explicitely to
+    %initiate the interpolation of the optical properties to the internal wavelength grid.
+    %Please note that this option may be extremely memory-consuming because for each 
+    %internal wavelength a full set of Legendre moments of the phase function is 
+    %stored (up to several thousands). The Mie tables are not part of the standard distribution 
+    %(because of their large size) but they are freely available from http://www.libradtran.org. 
+    %Note that a Mie calculation assumes spherical ice particles, the scattering function of 
+    %which differs systematically from non-spherical particles. Hence, \code{ic\_properties mie}
+    %is usually not representative of natural ice clouds.
+    \parameter{raytracing}
+    Use the crystal properties defined in \code{ic_raytracing_file} as input to CrystalTrace \citep{forster2017} which traces individual photon paths in ice crystals.
+    Works only in MYSTIC and in combination with \code{mc_panorama_forward} and \code{mc_sample_grid 360 180}.
+    \parameter{filename}
+    Read optical properties from specified filename; file format is as produced 
+    by the \code{mie} tool of {\sl libRadtran} (see \code{output\_user netcdf}). 
+    % or by Frank Evans' \code{cloudprp}.
+    \end{description}
+    The default property is \code{fu}.
 
-	Please note also that, in contrast to spherical particles, there is no unique 
-	definition of effective size for non-spherical particles. In particular, the
-	above parameterizations use different definitions which, however, differ only by 
-	a constant factor. 
-	\citet{Yang2000}, \cite{Key2002}, and \citet{baum05a:_bulk,baum05b:_bulk}
-	 use the general definition 
-	\begin{equation}
-	   r_{\rm eff} = {{3}\over{4}}{{\int V(h) n(h) dh}\over{\int A(h) n(h) dh}}
-	\end{equation}
-	  where $h$ is the maximum dimension of an ice crystal, $n(h)$ is the
-	  number of particles with maximum dimension $h$ in the size distribution,
-	  and $V$ and $A$ are the volume and mean
-	  projected area of the particles, respectively. The volume and area are
-	  based on the spherical diameter with equivalent volume and the
-	  spherical diameter with equivalent projected area as defined by 
-	  \citet{Yang2000}. On the other hand, \citet{Fu1996,Fu1998} use
-	  hexagonal columns and use the following definition
-	\begin{equation}
-	   r_{\rm eff} =  {{\int D^2 L n(L) dL}\over{2 \int (D L + {\sqrt{3}\over{4}} D^2) n(L) dL}}
-	\end{equation}
-	  where $D$ is the width of the ice crystal (that is, the maximum diameter of the 
-	  hexagonal area) and $L$ is the length. The integrand in the numerator is proportional 
-	  to the volume while that in the denominator is proportional to the projected area. 
-	  Evaluating these formulas one finds that, for the same hexagonal particle, the effective
-	  radius would be $3 \sqrt{3} / 4 = 1.299$ times larger following the 
-	  \citet{Yang2000}, \citet{Key2002} definition rather than the \citet{Fu1996,Fu1998} definition.
-	  As an example, an effective radius of 20$\mu m$ with 
-	  \code{ic\_properties fu} and \code{ic\_fu reff\_def on} and
-	  1.299 $\cdot$ 20$\mu m$ = 26$\mu m$ with \code{ic\_properties yang} would give comparable results
-	  for hexagonal columns. 
-	To use the original definition of the effective radius by \citet{Fu1996,Fu1998} use
-	\code{ic\_fu reff\_def on}!
+    Please note also that, in contrast to spherical particles, there is no unique 
+    definition of effective size for non-spherical particles. In particular, the
+    above parameterizations use different definitions which, however, differ only by 
+    a constant factor. 
+    \citet{Yang2000}, \cite{Key2002}, and \citet{baum05a:_bulk,baum05b:_bulk}
+     use the general definition 
+    \begin{equation}
+       r_{\rm eff} = {{3}\over{4}}{{\int V(h) n(h) dh}\over{\int A(h) n(h) dh}}
+    \end{equation}
+      where $h$ is the maximum dimension of an ice crystal, $n(h)$ is the
+      number of particles with maximum dimension $h$ in the size distribution,
+      and $V$ and $A$ are the volume and mean
+      projected area of the particles, respectively. The volume and area are
+      based on the spherical diameter with equivalent volume and the
+      spherical diameter with equivalent projected area as defined by 
+      \citet{Yang2000}. On the other hand, \citet{Fu1996,Fu1998} use
+      hexagonal columns and use the following definition
+    \begin{equation}
+       r_{\rm eff} =  {{\int D^2 L n(L) dL}\over{2 \int (D L + {\sqrt{3}\over{4}} D^2) n(L) dL}}
+    \end{equation}
+      where $D$ is the width of the ice crystal (that is, the maximum diameter of the 
+      hexagonal area) and $L$ is the length. The integrand in the numerator is proportional 
+      to the volume while that in the denominator is proportional to the projected area. 
+      Evaluating these formulas one finds that, for the same hexagonal particle, the effective
+      radius would be $3 \sqrt{3} / 4 = 1.299$ times larger following the 
+      \citet{Yang2000}, \citet{Key2002} definition rather than the \citet{Fu1996,Fu1998} definition.
+      As an example, an effective radius of 20$\mu m$ with 
+      \code{ic\_properties fu} and \code{ic\_fu reff\_def on} and
+      1.299 $\cdot$ 20$\mu m$ = 26$\mu m$ with \code{ic\_properties yang} would give comparable results
+      for hexagonal columns. 
+    To use the original definition of the effective radius by \citet{Fu1996,Fu1998} use
+    \code{ic\_fu reff\_def on}!
 
-	With the optional argument \code{interpolate} the ice cloud optical properties are interpolated 
-	over wavelength; useful for precalculated optical property files defined with \code{ic\_properties}. 
-	Please note that this option may be extremely memory-consuming because for each internal wavelength 
-	a full set of Legendre moments of the phase function is stored (up to several thousands). 
-		
+    With the optional argument \code{interpolate} the ice cloud optical properties are interpolated 
+    over wavelength; useful for precalculated optical property files defined with \code{ic\_properties}. 
+    Please note that this option may be extremely memory-consuming because for each internal wavelength 
+    a full set of Legendre moments of the phase function is stored (up to several thousands). 
+        
+\option{ic_raytracing_file}
+        ASCII file containing ice crystal properties for geometric optics ray tracing. 
+        \fcode{
+        ic\_raytracing\_file file
+        }
+        Five columns are expected:
+        \begin{verbatim}
+	#habit/crystal_file    CF      OF      DIST    DOF
+	plates                 0.50    0.0     1.0     3
+	columns                0.40    1.0     1.0     2
+	columns_L50a10         0.10    1.0     1.0     1
+	\end{verbatim}
+        Provide either \code{habit} or a specific \code{crystal_file}. \code{habit} can be one of the default habits \code{plates} or \code{columns}. The \code{crystal_file} file name follows the convention \code{columns_L50a10} for a hexagonal solid column with length $L=50\, \mu m$ and radius of the basal faces $a = 10\, \mu m$. \code{crystal_file} is an ASCII file containing the $x$, $y$, and $z$ coordinates of the eight crystal faces in three columns and has to be stored in \code{data/ic/crystal_geometry/}. New crystal geometries can be generated with the python file \code{generate_crystal_file.py}. The crystal fraction (\code{CF}) represents the fraction of the individual crystal species which have to sum up to 1 in total. The orientation fraction (\code{OF}) determines the fraction of oriented crystals which are further specified by the remaining two parameters: the orientation distortion parameter \code{DIST} in degrees and the degrees of freedom (\code{DOF}) as integer representing the number of Euler angles of free rotation. \code{DOF=3} means randomly oriented crystals which corresponds with \code{OF=0}. For singly-oriented crystals \code{DOF=2} which form sundogs (plates) and upper/lower tangent arcs (columns), respectively. \code{DOF=1} is the special case for Parry-oriented ice crystal columns. In general, the \code{DIST} and \code{DOF} parameters take only effect if \code{OF>0}.
+                
 \option{include}
 	Include a file into the \code{uvspec} input.  
 	\fcode{ 
@@ -3578,62 +3695,60 @@ The default option is Ou.
 	define a cloud in the layer between 3 and 4 km with sharp boundaries.
 		
 \option{isotropic_source_toa}
-	Specifies that isotropic illumination is used at top-boundary instead
-	of beam source. Useful for those who want to calculate the reflectance 
-	for a homogeneous or inhomogeneous atmosphere. The intensity is still set by
-	\code{source solar file}. Only works with \code{disort} and \code{twostr}.
-		
+    Specifies that isotropic illumination is used at top-boundary instead
+    of beam source. Useful for those who want to calculate the reflectance 
+    for a homogeneous or inhomogeneous atmosphere. The intensity is still set by
+    \code{source solar file}. Only works with \code{disort} and \code{twostr}.
+        
 \option{latitude}
-	This option can be used to specify the latitude of the location to simulate.
-	(This option only has an effects, if \code{longitude} is specified, too.)
-	\fcode{
-	latitude N/S deg [min] [sec]
-	}
-	where \code{N} and \code{S} stands for the northern and southern hemisphere, respectively.
-	\code{deg min sec} is the position in degrees, arc minutes, and arc seconds.
-	\code{deg} might also be a float number. \code{min} and \code{sec} may be obmitted.
-	The \code{latitude} information will be used for the following: 
-	
-	%\code{latitude} in combination with \code{longitude}, \code{time}, and any \code{map}-option
-	%is used to select the location where to read the input data.
-	
-	\code{latitude} in combination with \code{longitude} and \code{time} is used to calculate 
-	the solar zenith angle, if no \code{sza} is specified (see also \code{time_interval}).
-	
-	\code{latitude} in combination with \code{longitude} and \code{time} is used to choose a
-	suitable default atmosphere file, if no \code{atmosphere_file} is specified. 
-		
+    This option can be used to specify the latitude of the location to simulate.
+    (This option only has an effects, if \code{longitude} is specified, too.)
+    \fcode{
+    latitude N/S deg [min] [sec]
+    }
+    where \code{N} and \code{S} stands for the northern and southern hemisphere, respectively.
+    \code{deg min sec} is the position in degrees, arc minutes, and arc seconds.
+    \code{deg} might also be a float number. \code{min} and \code{sec} may be obmitted.
+    The \code{latitude} information will be used for the following: 
+    
+    %\code{latitude} in combination with \code{longitude}, \code{time}, and any \code{map}-option
+    %is used to select the location where to read the input data.
+    
+    \code{latitude} in combination with \code{longitude} and \code{time} is used to calculate 
+    the solar zenith angle, if no \code{sza} is specified (see also \code{time_interval}).
+    
+    \code{latitude} in combination with \code{longitude} and \code{time} is used to choose a
+    suitable default atmosphere file, if no \code{atmosphere_file} is specified. 
+        
 \option{longitude}
-	This option can be used to specify the longitude of the location to simulate.
-	(This option only has an effects, if \code{latitude} is specified, too.)
-	\fcode{
-	longitude E/W deg [min] [sec]
-	}
-	where \code{E} and \code{W} stand for the eastern and western hemisphere, respectively.
-	\code{deg min sec} is the position in degrees, arc minutes, and arc seconds.
-	\code{deg} might also be a float number. \code{min} and \code{sec} may be obmitted.
-	For possible usage of the \code{longitude} information, see \code{latitude}. 
-		
-\iflidar{
-\option{mc_aerosol_is}
-	Enable aerosol concentration importance sampling. The input file
-	includes one column containing the desired scaling factors: 
-	\fcode{
-	mc_aerosol_is file
-	}
-	USE ONLY IF YOU REALLY KNOW WHAT YOU ARE DOING!
-  		}
-\iflidar{
+    This option can be used to specify the longitude of the location to simulate.
+    (This option only has an effects, if \code{latitude} is specified, too.)
+    \fcode{
+    longitude E/W deg [min] [sec]
+    }
+    where \code{E} and \code{W} stand for the eastern and western hemisphere, respectively.
+    \code{deg min sec} is the position in degrees, arc minutes, and arc seconds.
+    \code{deg} might also be a float number. \code{min} and \code{sec} may be obmitted.
+    For possible usage of the \code{longitude} information, see \code{latitude}. 
+        
+\ifmystic{
 \option{mc_albedo_spectral}
 	To be done!
 		}
 \ifthreedmystic{
 \option{mc_albedo_spectral_file}
-	Define a MYSTIC 2D spectral albedo input file.
-	\fcode{
-	mc\_albedo\_spectral\_file file
-	}
-		}
+    Define a MYSTIC 2D spectral albedo input file.
+    \fcode{
+    mc\_albedo\_spectral\_file file
+    }
+        }
+\ifthreedmystic{
+\option{mc_ambrals_type}
+    File containing wavelength-dependent AMBRALSs to be used in combination with \code{mc\_ambrals\_spectral\_file}.
+    \fcode{
+    mc\_ambrals\_type file
+    }
+        }
 \ifmystic{
 \option{mc_azimuth_old}
 	Use old MYSTIC azimuth convention (0 degree = looking from the
@@ -3670,14 +3785,22 @@ The default option is Ou.
 	  diffuse downward irradiance (default)
 	\parameter{eup} 
 	  diffuse upward irradiance
+        \parameter{exp} 
+	  diffuse irradiance in positive x direction for grid box above specified altitude at the left (lower x) face; output is written to eup.
+        \parameter{exn} 
+	  diffuse irradiance in negative x direction for grid box above specified altitude at the left (lower x) face; output is written to edn.
+        \parameter{eyp} 
+	  diffuse irradiance in positive y direction for grid box above specified altitude at the front (lower y) face; output is written to eup.
+        \parameter{eyn} 
+	  diffuse irradiance in negative y direction for grid box above specified altitude at the front (lower y) face; output is written to edn.
 	\parameter{act} 
 	  actinic flux
 	\parameter{abs} 
 	  absorption
-	\parameter{emis} 
-	  emission
-	\parameter{heat} 
-	  heating rates, that is absorption + emission
+        \parameter{emis} 
+          emission
+        \parameter{heat} 
+          heating rates, that is absorption + emission
 	\end{description}
 	For \code{abs}, \code{emis}, \code{heat} an optional argument \code{W\_per\_m2\_and\_dz} (default), 
 	\code{W\_per\_m3}, or \code{K\_per\_day} may be specified which converts the result e.g. to heating rates. 
@@ -3706,12 +3829,32 @@ The default option is Ou.
 		}
 \undocumented{
 \option{mc_bcond}
-	Undocumented option to define MYSTIC boundary conditions: periodic (default),
-	absorbing (\code{absorb}), mirror (not really supported - don't expect meaningful results). 
-		}
+    Undocumented option to define MYSTIC boundary conditions: periodic (default),
+    absorbing (\code{absorb}), mirror (\code{mirror}) -- make sure that you understand 
+    what you are doing! While \code{mirror} gives reasonable results in the thermal spectral range,
+    the direct sun is messed up because it changes direction (by mirroring) without being scattered.
+        }
 \ifmystic{
+\option{mc_boxairmass}
+	Calculate box-airmass-factors based on the pathlength
+	distribution as described by \citet{deutschmann2011}.
+	This option is currently only included for 1D
+	atmospheres. The ouput is a two-column file (basename+\".amf\")
+	including the altitude levels and the box-airmass-factors
+	corresponding to the layer above the given altitude level. 
+        The altitude levels in the output file correspond to the once
+        provided with \code{atmosphere_file} and the boxairmass factors
+        are for the layers above the given altitude levels.
+	The method works for trace gases which do not absorb a
+	significant amount of radiation, i.e. which do not influence
+	the pathlength distribution significantly.
+	        }
+\undocumented{
 \option{mc_coherent_backscatter}
 	Switches on coherent backscattering, use only with \code{mc_polarisation}.
+	\fcode{
+	  mc_coherent_backscatter [option1] [option2]
+	}
         \begin{itemize}
         \item If used without \code{mc_lidar} or \code{mc_radar} it will calculate enhancement values directly 
         from averaged scattering matrices (\citet{mishchenko2006}) and output them 
@@ -3727,7 +3870,57 @@ The default option is Ou.
         experimental option. Additional output like the value of $0.75/(kl^*)$ which gives the cone 
         halfwidth in radian (\citet{fiebig2010_phd}) is written into a .lid.cb file.
         \end{itemize}
+        Description of options:
+        \begin{description}
+        \parameter{option1}
+          Sets configuration for CB with Lidar. Takes the values 0, 1, 2 which correspond to the
+          three cases A, B, C in fig. 3.8 in \citet{pause16}. Optional, default is 0, use 1 or 2 to get 
+          a significant CB signal.
+        \parameter{option2}
+          If set to 1 omits adding the CB signal to the full signal, that means the result is just
+          the mean of the diffuse signals of both scattering paths. Optional, default is 0 (off).
+        \end{description}
 		}
+\undocumented{
+\option{mc_core}
+	\fcode{
+			mc_core [Optionally: Corefile]
+	}
+	Activate delta scaling in the core of thick clouds.
+	If set, in the inner part of all clouds specified by "wc\_file 3D" the scattering phase function is delta-scaled, i.e. it is assumed to be almost isotropic,
+	while simultaneously reducing the optical thickness. Depending on the specific setup, this can substantially decrease the number of scatterings
+	inside the cloud core and therefore simulation time. Deviations in the outcome are kept small by use of the original phase function in the cloud boundary. However, the option should not be used if the sensor points closely towards the sun. Which gridboxes belong to the cloud core is determined by an algorithm. Its result can be seen by setting "mc\_core\_savefile", the thickness of the cloud boundary can be set via "mc\_core\_threshold". Because "mc\_core" does not refine the cloud grid, the given cloud gridboxes should have a resolution finer than "mc\_core\_threshold". Alternatively, the user can specify the core pixels manually by providing a file similar to a 3D cloud file. In this case, the algorithm is not applied and "mc\_core\_threshold" has no effect.
+	Corefile structure: 
+	\fcode{
+    Nx  Ny  Nz 4 \\
+    dx  dy  z(1) z(2) ... z(nlev) \\
+    ix  iy  iz  core  (core=1 for voxel belongs to the core, 0 otherwise)\\
+    }
+	\code{Nx}, \code{Ny} and \code{Nz} are the number or gridboxes in each direction, \code{dx}, \code{dy} and \code{z()} specify the box sizes. \code{4} is the flag to indicate corefiles. See also the description for "wc\_file 3D".
+		}
+\undocumented{
+\option{mc_core_savefile}
+	\fcode{
+			mc_core_savefile file
+	}
+	If set, the shape of the detected hidden core is written to the given file. Format is: \fcode{indexX indexY indexZ core distance}
+	"core" is 0 for voxel not in core, 1 for in core. "distance" is the minimal optical distance to the observer in the cloud boundary. Value is "nan" inside the core or if the user specified a custom core.
+	}
+\undocumented{
+\option{mc_core_scale}
+	\fcode{
+			mc_core_scale value
+	}
+	Delta scaling factor f inside the hidden core. If mc\_core\_scale is smaller than zero, f=g,  with g the assymmetry parameter is used for scaling
+	(which implies isotropic scattering in the core). Default -1.0.
+	}
+\undocumented{
+\option{mc_core_threshold}
+	\fcode{
+			mc_core_threshold value
+	}
+	Distance of the hidden core from the cloud boundary in tau units. Default is 3.0.
+	}
 \ifmystic{
 \option{mc_escape}
 	Calculate MYSTIC radiances via escape probabilities; slows down the tracing 
@@ -3738,19 +3931,60 @@ The default option is Ou.
 	  mc_escape on/off
 	} 
   		}
+\ifmystic{
+\option{mc_forward_output}
+	Specify quantity to be calculated using forward Monte Carlo.
+	Forward output is calculated for each grid box; may need a considerable amount of memory,
+        depending on the 3D cloud grid. Only meaningful with \code{rte\_solver mystic}.
+	This option is only available for forward calculations. 
+	For backward please use \code{mc\_backward\_output}.
+	\fcode{
+	mc\_forward\_output quantity [unit]
+	}
+	\code{quantity} can be one of the following:
+	\begin{description}
+	\parameter{absorption}
+	Calculate MYSTIC absorption and write it to file \code{mc\_basename}.abs.spc 
+        in the following format:
+        \fcode{
+        lambda ix iy iz absorption
+        }
+	For backward please use \code{mc\_backward\_output abs}.
+	\parameter{actinic}
+	Calculate MYSTIC actinic flux by dividing the absorbed energy by the 
+        absorption coeffcient; this method is much better than the traditional photon counting 
+        which usually comprises spikes (because in the latter method each photon is weighted with 
+        $1/\cos(\theta)$ which may be a very large number);  
+        For backward please use \code{mc\_backward\_output act}. 
+	\parameter{emission}
+	Calculate MYSTIC emission. Note that emission is calculated directly without tracing 
+        any photons which makes this option very fast. Changing \code{mc\_photons} will therefore 
+        not affect the result. Only meaningful with \code{source thermal}. 
+	For backward please use \code{mc\_backward\_output emis}.
+	\parameter{heating}
+	Calculate MYSTIC heating rates. This is identical to \code{absorption} for \code{source solar}. 
+	For \code{source thermal}, however, the emission of a photon in a grid box is counted as cooling. 
+	For backward please use \code{mc\_backward\_output heat}.
+	\end{description}
+        The optional argument \code{unit} may be one of \code{W\_per\_m2\_and\_dz} (default), \code{W\_per\_m3}, or \code{K\_per\_day}.
+	\code{unit} may be specified to convert the result e.g. to heating rates. 
+		}
 \ifthreedmystic{
 \option{mc_ipa}
-	Run MYSTIC in independent pixel mode. Only meaningful with \code{rte_solver montecarlo}.
-		}
-\iflidar{
+    Run MYSTIC in independent pixel mode. Only meaningful with \code{rte_solver montecarlo}.
+        }
+\undocumented{
 \option{mc_jacobian}
-	Calculate jacobi matrix. Only meaningful with \code{rte\_solver 
-	montecarlo}. 
- 
-	This option works with \code{mc\_lidar}, or with \code{mc\_backward}. In 
-	the first case, it delivers the jacobi matrix for an elastic or HSRL 
-	lidar. In the latter case, it delivers the jacobi matrix for height 
-	resolved changes in molecular absorption and scattering coefficients. 
+	Calculate Jacobians. i.e. the derivative of radiance/irradiance with respect to absorption/scattering optical thickness. The derivatives are calculated for each vertical layer. 
+
+        The option is implemented only for \code{rte\_solver montecarlo} in backward tracing mode \code{mc\_backward}.
+
+        The derivatives are calculated separately for all species (i.e. molecules, aerosols and clouds). So far the option is only included for monochromatic simulations. 
+
+        The result is provided in the output file \code{basename.jac}, which includes the following columns: \\
+
+        x \hspace{1ex}  y \hspace{1ex}  z$_i$ \hspace{1ex}  $\frac{\partial{I}}{\partial{\tau_{s,mol,i}}}$ \hspace{1ex} $\frac{\partial{I}}{\partial{\tau_{a,mol,i}}}$ \hspace{1ex}  $\frac{\partial{I}}{\partial{\tau_{s,aer,i}}}$ \hspace{1ex}  $\frac{\partial{I}}{\partial{\tau_{a,aer,i}}}$
+        
 		}
 \iflidar{
 \option{mc_lidar_file}
@@ -3761,130 +3995,74 @@ The default option is Ou.
 	mc_lidar_file file 
 	}
 		}
-\ifthreedmystic{
+\ifmystic{
 \option{mc_maxscatters}
 	If set, photons are destroyed after n scatters. Please note that this
 	is only for testing, debugging and process understanding! The result
 	will certainly be wrong because photons are lost.
 		}
+\ifmystic{
+\option{mc_minphotons}
+	If set, this is the minimum value of photons to be used per
+	simulation. The default value is \code{MIN_MCPHOTONS}, set in
+	uvspec.h.
+	
+	\fcode{
+	mc_maxscatters value
+	}
+		}
+\ifmystic{
+\option{mc_minscatters}
+	If set, local estimates are not performed before n scatters ( e.g. if
+	set to 1, single scattering is not taken into account). Please note
+	that this is only for testing, debugging and process understanding!
+	The result will certainly be wrong.
+		}
+\option{mc_nca}
+    Approximate calculation of 3D thermal heating rates with the Neighbouring Column Approximation \citep{klinger2016, klinger2019}. For an example and a description how to define the 3D cloud input see \file{examples/UVSPEC_HEAT_NCA2019_*}.
+        
 \ifthreedmystic{
-\option{mc_panorama}
-	Use this option only together with \code{mc_panorama_view}.
+\option{mc_panorama_alignment}
+    Use this option only together with \code{mc_panorama_view}. This
+    option has been introduced to facilitate e.g.~the calculation of
+    circum solar radiation. Three sub-options are available, \code{sun},
+    \code{mu}, and \code{zenith}. When set \code{sun}, the camera is
+    aligned to sun (i.e.~using the options \code{sza} and
+    \code{phi0}). $\theta$ and $\mu$ as given by the option
+    \code{mc_panorama_view} now relates to the sun's position. $\mu$ sets
+    cosine of the angular distance from the center of the sun. $\mu=$-1
+    implies looking directly into the sun. With $\phi$ we select the
+    direction around the sun on a circle with angular distance ${\rm
+    acos}(\mu)$ from the center of the sun. $\phi=0$ implies that the
+    camera pixel is looking in a direction exactly below the sun, at
+    $\phi=180$ the camera pixel will be looking exactly above the
+    sun. Increasing $\phi$ means the direction of looking moves clock-wise
+    around the sun-camera-line (seen from the sun). If the sun is in the
+    zenith, the definition of $\phi$ is identical to that in \code{phi}.
+    
+    The sub-option \code{mu} aligns the camera geometry according to the
+    options \code{umu} and \code{phi}. Be aware that \code{phi0} and
+    \code{phi} are defined differently!
+    
+    The sub-option \code{zenith} makes only sense when using
+    \code{mc_spherical 3D}. Then the camera is aligned to the zenith with
+    respect to the lon-lat position of the camera.
+        }
+\ifthreedmystic{
+\option{mc_panorama_forward}
+    Simulate a panorama by forward tracing. Only works with
+    \code{mc_sample_grid}. Can best be explained by
+    following example:
 
-    \fcode{
-    mc_panorama circumsolar_var_red
+    \fcode{\\
+    mc_panorama_forward\\
+    mc_sample_grid NPHI NTHETA [] []\\
     }
-    Variance reduction method for the calculation of circumsolar radiation.
-    Re-distributes the initial backward photon directions according to DDIS phase\_max.
-    Use only if you calculate the average radiance for one large FOV (at least two times of the angular radius of the sun disk, e.g. 
-    if your sensor convers 0$^\circ$ to 1$^\circ$ from the sun center or 0$^\circ$ to 5$^\circ$ from the sun
-    center). For smaller FOVs (e.g 0$^\circ$ to 0.35$^\circ$) it may slow down convergence as this method does not yet consider
-    the extent of the sun disk. Results should not be wrong but you may need more photons to achieve the same 
-    standard deviation. Consideration of the sun's extent in this method should be easy to implement, however.
-    For the simulations of radiance profiles (so called sunshapes) this option should probably not be used as it will
-    only increase computing time without any benefit. For further information see Reinhardt (2013) Sect. 3.4.2 
-    (Dissertation, LMU, urn:nbn:de:bvb:19-164380, http://edoc.ub.uni-muenchen.de/16438/).
 
-	\fcode{
-	mc_panorama distr_photons_over_pixel
-	}
-	With only \code{mc_panorama_view} all photons for the same pixel
-	are emitted into exactly the same direction. The finite solid angle that
-	is covered by one pixel is not accounted for. With 
-	\code{mc_panorama distr_photons_over_pixel} the photons are distributed
-	over the FOV covered by the pixel. 
-	
-	\fcode{
-	mc_panorama no_pixel
-	}
-	Useful for calculation of radiance distributions which shall be exactly
-	charted. Originally \code{mc_panorama_view} was meant to calculate images
-	like produced by a CCD camera. You set the edges of your desired image
-	and the resolution of the sensor. MYSTIC will then calculate the
-	radiances at the center of each pixel. This implies that values for
-	the edges of the image as given by the input file are never
-	computed. The border angles for which radiances are computed are
-	shifted half a pixel to the inside of the domain. With
-	\code{mc_panorama no_pixel} the edging values as given in the input
-	file are directly hit. A short example: Assume you only have three
-	pixels. You choose your edges to be at $\phi=0$ and $\phi=180$. With
-	\code{mc_panorama no_pixel} MYSTIC will calculate radiances at
-	$\phi=0$, $\phi=90$ and $\phi=180$. Without this option you will get
-	values for $\phi=30$, $\phi=90$ and $\phi=150$.
-	
-	\fcode{
-	mc_panorama quicklook
-	}
-	This option allows to do a fast calculation in order to see whether you
-	have set your parameters right. All panorama pixels are run in a fast
-	mode: only one photon is started per pixel, it is moved till to a
-	fixed optical depth (0.1), and then a local estimate is performed. In
-	case the local estimate is done scattering (i.e.~the photon has not
-	hit a surface before reaching tau=0.1), isotropic scattering is
-	assumed. Then the photon is killed. We suggest you turn off Rayleigh
-	scattering and aerosols while using this option. The result lets you
-	see roughly where your panorama is looking at surface, sunlit clouds,
-	shaded clouds, or slanted clouds.
-	
-	\fcode{
-	mc_panorama with_direct_rad
-	} 
-	Output is direct plus diffuse radiance.
-	Use together with \code{mc_panorama distr_photons_over_pixel}.
-
-	\fcode{
-	mc_panorama weight_with_cos
-	} 
-	Output is weighted with the cosine of the angle between photon and zenith of camera.
-	Use together with \code{mc_panorama distr_photons_over_pixel}.
-		}
-\ifthreedmystic{
-\option{mc_panorama_view}
-	Simulate a panorama. Only works with \code{mc_sensorposition},
-	\code{mc_sample_grid} and \code{mc_backward}. Can best be explained by
-	following example:
-
-	\fcode{\\
-	mc_panorama_view PHI_1 PHI_2 THETA_1 THETA_2\\
-	mc_sensorposition X Y Z \\
-	mc_sample_grid NPHI NTHETA [] []\\
-	mc_backward NPHI1 NTHETA1 NPHI2 NTHETA2\\
-	}
-
-	or, with numbers:
-
-	\fcode{\\
-	mc_panorama_view 45 135 80 180\\
-	mc_sensorposition 3000 3000 26 \\
-	mc_sample_grid 90 100 [] []\\
-	mc_backward 10 0 10 99\\
-	}
-
-	In this example, \code{mc_panorama_view} defines the camera to cover
-	the area between 10 degrees below the horizon (80 degrees from nadir,
-	looking into the ground) and the zenith (180 degrees from nadir), and
-	looking into the directions between south-west (45) and
-	north-west (135). The camera is positioned
-	at x=3km, y=3km and z=26m, see \code{mc_sensorposition}. The number of
-	pixels that the camera has is defined by \code{mc_sample_grid}, hence
-	the camera horizontal resolution is 1 degree in the
-	horizon: (135-45)/90. The camera vertical resolution is also 1
-	degree: (180-80)/100. This run only calculates one vertical line at
-	phi=55.5 (see \code{mc_backward}). The square brackets in the line
-	\code{mc_sample_grid} are usually dx and dy, they are set
-	automatically in the presence of 3d clouds. If no clouds are present,
-	you need to set them, if you use \code{mc_elevation_file}, you need to
-	set them consistent with the elevation file. NOTE: If you have
-	formerly used \code{mc_panorama}, this is what has changed: The order
-	of the numbers has changed: Formerly, we wrote \code{mc_panorama MU_1
-	MU_2 PHI_1 PHI_2}, where MU\_i=cos(THETA\_i). In the options
-	\code{mc_sample_grid} and \code{mc_backward}, X and Y have been
-	swapped. Although these changes are far from being nice, they are
-	necessary to introduce a conform nomenclatur throughout
-	libRadtran. Sorry for that. (CAUTION! The definition of phi for
-	panoramas was formerly different than that of \code{phi}!  This has
-	been changed on 19.11.2010!)
-		}
+    In this example, \code{mc_panorama_forward} calculated an all-sky (4 pi) panorama with NTHETA * NPHI grid points.
+    Please note that the results are averaged over the whole domain. \code{panorama_forward} therefore doesn't make
+    much sense with 3D cloud or surface geometry.
+        }
 \ifmystic{
 \option{mc_photons}
 	Total number of photons to be traced by the Monte Carlo solver, MYSTIC.
@@ -3905,8 +4083,9 @@ The default option is Ou.
 		}
 \ifmystic{
 \option{mc_polarisation}
-	Switch on polarisation for \code{rte_solver montecarlo}. You can provide one of the 
-        following optional numbers to specify the initial Stokes Vector:
+	Switch on polarisation for \code{rte_solver montecarlo}. By default uses unpolarized
+        sunlight (light starting with an initial Stokes Vector (1,0,0,0). Optionally you may provide 
+        one of the following numbers to specify one of the following initial Stokes Vectors:
         \begin{itemize}
         \item 0 : (1,0,0,0) (default)
         \item 1 : (1,1,0,0)
@@ -3915,9 +4094,10 @@ The default option is Ou.
         \item -1 : (1,-1,0,0)
         \item -2 : (1,0,-1,0)
         \item -3 : (1,0,0,-1)
-        \item 4 : Each Stokes Vector is randomly determined fulfilling the condition $I^2=Q^2+U^2+V^2$,
-        use this e.g. if you need unpolarized radiation with \code{mc_coherent_backscatter} in combination
-        with \code{mc_lidar}.
+        \item 4 : Each photon's Stokes Vector is randomly determined fulfilling the condition 
+        $I^2=Q^2+U^2+V^2$, use this e.g. if you need unpolarized radiation with 
+        \code{mc_coherent_backscatter} using \code{mc_lidar} or \code{mc_radar}. Averaging over 
+        a large number of these random Stokes Vectors leads again to unpolarized radiation (1,0,0,0).
         \end{itemize}
 	Details about the implementation of polarisation are described in \citet{emde2010}.
 		}
@@ -3939,102 +4119,130 @@ The default option is Ou.
        	Usually a random seed is determined from current time plus process id. 
        	This option is useful to re-run a simulation for debugging.
        		
+\ifthreedmystic{
+\option{mc_reference_to_nn}
+    Only works with \code{mc_backward}. The sampled pixels correspond to
+    the surface pixels. In other words, the photons are still counted at
+    zout, but the sample pixel which they are counted in corresponds to
+    the pixel at sea level. In other words, the sample grid is projected
+    from nn to zout using umu and phi.
+        }
 \undocumented{
 \option{mc_refraction}
 	Enable refraction for \code{rte_solver montecarlo}. Works only 
 	in 1D spherical geometry (with option \code{mc_spherical}).
 		}
-\iflidar{
-\option{mc_ris}
-        Use with \code{mc_radar} or \code{mc_lidar} to get good statistics. Artificially enhances
-        the scattering optical depth by a constant factor.
-        \fcode{
-        mc_ris factor value
+\ifthreedmystic{
+\option{mc_rpv_spectral_file}
+    Define a MYSTIC 2D RPV spectral BRDF input file.
+    \fcode{
+    mc\_rpv\_spectral\_file file
+    }
         }
-        Set the ris-factor manually.
-        \fcode{
-        mc_ris optical_depth value
-        }        Automatically determine a ris-factor to reach the provided scattering optical
-        depth value along a straight line from the transmitter to the border of the domain.
-        In case of Lidar/Radar four additional paths at the rim of the transmitter cone are
-        simulated and if needed an average over all paths is calculated.
-		}
 \iflidar{
 \option{mc_satellite_view}
-	Simulate a satellite image. Only works with
-	\code{mc_satellite_position}/\code{mc_sensorposition},
-	\code{mc_sample_grid}, \code{mc_backward} and
-	\code{mc_spherical 3D}. Can best be explained by following example:
-	
-	\fcode{\\
-	mc_spherical 3D \\
-	mc_satellite_view PHI_W PHI_E THETA_S THETA_N \\
-	mc_sample_grid N_PHI N_THETA \\
-	mc_satellite_position SAT_LON SAT_LAT SAT_ALT \\
-	mc_sun_position SUN_LON SUN_LAT \\
-	mc_backward \\
-	}
-	
-	In this example, the earth is a sphere (not plane parallel). The
-	satellite is in zenith above longitude SAT\_LON degrees, latitude
-	SAT\_LAT degrees, and at an altitude of SAT\_ALT
-	meters. (Alternatively, you can use \code{mc_sensorposition S_X S_Y
-	S_Z}, with [S\_X,0,0] being toward MSG, [0,S\_Y,0] being above the
-	Maledives, and [0,0,S\_Z] being above the north pole.) The image taken
-	has a resolution of N\_THETA times N\_PHI, and the picture (taken with
-	a camera with spherical picture geometry) spans from PHI\_W to PHI\_E
-	degrees (positive being east of nadir) and from THETA\_S to THETA\_N
-	degrees (positive being north of nadir). In this example, the sun is
-	in zenith at the latitude SUN\_LAT degrees (positive meaning north) and
-	longitude SUN\_LON degrees (positive meaning east). See also
-	\code{mc_panorama_view}, which is a similar option.  Example for MSG:
-	
-	\fcode{\\
-	mc_spherical 3D \\
-	mc_satellite_view -10 10 -10 10 \\
-	mc_sample_grid 4000 4000 \\
-	mc_satellite_position 0 0 3.6e7 \\
-	mc_sun_position -10 23\# about 1PM UTC on mid summer \\
-	mc_backward \\
-	}
-	
-	Only meaningful with \code{rte_solver montecarlo}.
-		}
-\ifthreedmystic{
-\option{mc_sensorposition}
-	Define the position of a sensor. 
+    Simulate a satellite image. Only works with
+    \code{mc_satellite_position}/\code{mc_sensorposition},
+    \code{mc_sample_grid}, \code{mc_backward} and
+    \code{mc_spherical 3D}. Can best be explained by following example:
+    
+    \fcode{\\
+    mc_spherical 3D \\
+    mc_satellite_view PHI_W PHI_E THETA_S THETA_N \\
+    mc_sample_grid N_PHI N_THETA \\
+    mc_satellite_position SAT_LON SAT_LAT SAT_ALT \\
+    mc_sun_position SUN_LON SUN_LAT \\
+    mc_backward \\
+    }
+    
+    In this example, the earth is a sphere (not plane parallel). The
+    satellite is in zenith above longitude SAT\_LON degrees, latitude
+    SAT\_LAT degrees, and at an altitude of SAT\_ALT
+    meters. (Alternatively, you can use \code{mc_sensorposition S_X S_Y
+    S_Z}, with [S\_X,0,0] being toward MSG, [0,S\_Y,0] being above the
+    Maledives, and [0,0,S\_Z] being above the north pole.) The image taken
+    has a resolution of N\_THETA times N\_PHI, and the picture (taken with
+    a camera with spherical picture geometry) spans from PHI\_W to PHI\_E
+    degrees (positive being east of nadir) and from THETA\_S to THETA\_N
+    degrees (positive being north of nadir). In this example, the sun is
+    in zenith at the latitude SUN\_LAT degrees (positive meaning north) and
+    longitude SUN\_LON degrees (positive meaning east). See also
+    \code{mc_panorama_view}, which is a similar option.  Example for MSG:
+    
+    \fcode{\\
+    mc_spherical 3D \\
+    mc_satellite_view -10 10 -10 10 \\
+    mc_sample_grid 4000 4000 \\
+    mc_satellite_position 0 0 3.6e7 \\
+    mc_sun_position -10 23\# about 1PM UTC on mid summer \\
+    mc_backward \\
+    }
+    
+    Only meaningful with \code{rte_solver montecarlo}.
+        }
+\ifmystic{
+\option{mc_sensordirection}
+    Define viewing direction of an irradiance sensor in Monte Carlo backward mode. 
+    \fcode{
+    mc_sensordirection x-value y-value z-value
+    }
+    Has been introduced for 
+    irradiance calculations in topography and might not properly work with all options. 
+    For radiance use the usual \code{umu} and \code{phi}. 
+        }
+\ifmystic{
+\option{mc_spectral_is}
+	Calculate a spectrum with high spectral
+	resolution using an importance sampling
+	method.  
 	\fcode{
-	mc_sensorposition x-value y-value z-value
+	mc_spectral_is [wvl]
 	}
-	Has been introduced for irradiance calculations in topography
-	and might not properly work with all options. 
-		}
+	The spectral variation of Rayleigh
+	scattering and molecular absorption is fully
+	included as well the spectral variation of
+	aerosol and cloud scattering and absorption
+	coefficients.  The spectral variation of the
+	phase matrix is neglected, for all wavelengths
+	the phase matrix of the calculation wavelength
+	is assumed. 
+	
+	Use the optional argument \code{wvl} to specify calculation wavelength. 
+	If not set, the central wavelength of the selected spectral interval is used.
+
+	This method is very efficient for
+	calculations with very high spectral
+	resolution, e.g.  simulations for trace gas
+	retrievals, in particular when polarization is required.
+        For more details refer to
+	\citet{emde2011}.
+	        }
 \ifmystic{
 \option{mc_spherical}
-	Spherical geometry in MYSTIC. 
-	\fcode{
-	mc_spherical 1D
-	}
-	Works only in "1D" - \code{wc_file 3D} 
-	and \code{ic_file 3D} are not yet considered. If \code{mc_spherical} is selected
-	\code{mc_backward} is switched on automatically. Viewing
-	direction (\code{umu}, \code{phi}) and sun position
-	(\code{sza}, \code{phi0}) are defined with respect to the
-	sensor position specified by \code{zout}. For details about
-	the implementation of spherical geometry please refer to
-	\citet{emde2007}. 
+    Spherical geometry in MYSTIC. 
+    \fcode{
+    mc_spherical 1D
+    }
+    Works only in "1D" - \code{wc_file 3D} 
+    and \code{ic_file 3D} are not yet considered. If \code{mc_spherical} is selected
+    \code{mc_backward} is switched on automatically. Viewing
+    direction (\code{umu}, \code{phi}) and sun position
+    (\code{sza}, \code{phi0}) are defined with respect to the
+    sensor position specified by \code{zout}. For details about
+    the implementation of spherical geometry please refer to
+    \citet{emde2007}. 
 
-	\iflidar{
-	\fcode{
-	mc_spherical 3D
-	}
-	3D spherical geometry in MYSTIC. Only works with
-	\code{mc_satellite_position}/\code{mc_sensorposition}, and
-	\code{mc_satellite_view}, and only for solar backward. You have to set
-	the sun position using \code{mc_sun_position}. Still very
-	experimental. Does not work with \code{mc_elevation_file}.
-	}
-		}
+    \iflidar{
+    \fcode{
+    mc_spherical 3D
+    }
+    3D spherical geometry in MYSTIC. Only works with
+    \code{mc_satellite_position}/\code{mc_sensorposition}, and
+    \code{mc_satellite_view}, and only for solar backward. You have to set
+    the sun position using \code{mc_sun_position}. Still very
+    experimental. Does not work with \code{mc_elevation_file}.
+    }
+        }
 \ifthreedmystic{
 \option{mc_std}
 	Calculate standard deviation of the average.
@@ -4049,12 +4257,12 @@ The default option is Ou.
 		}
 \iflidar{
 \option{mc_sun_position}
-	Sun position when using \code{mc_spherical 3D}. See \code{mc_satellite_view}
-	for an example and explanation.
-	\fcode{
-	mc_sun_position longitude latitude
-	}
-		}
+    Sun position when using \code{mc_spherical 3D}. See \code{mc_satellite_view}
+    for an example and explanation.
+    \fcode{
+    mc_sun_position longitude latitude
+    }
+        }
 \ifmystic{
 \option{mc_surface_reflectalways}
 	Usually, a photon is either absorbed or reflected at the surface, 
@@ -4071,15 +4279,29 @@ The default option is Ou.
        		}
 \undocumented{
 \option{mc_tipa}
-	Run MYSTIC in tilted independent pixel mode. Only meaningful with \code{rte_solver
-	montecarlo}. Choose either \code{mc_tipa dir3d} or \code{mc_tipa
-	dirdiff}. The latter is the analogon to \code{tipa dirdiff}, where the
-	3d-cloud-matrix is tilted according to the solar zenith angle and is
-	then used as input for all the following calculations. 
-	In \code{mc_tipa dir3d}, photons are propagated in 3d until the first
+    Run MYSTIC in tilted independent pixel mode. Only meaningful with \code{rte_solver
+    montecarlo}. Choose either \code{mc_tipa dir3d} or \code{mc_tipa
+    dirdiff}. The latter is the analogon to \code{tipa dirdiff}, where the
+    3d-cloud-matrix is tilted according to the solar zenith angle and is
+    then used as input for all the following calculations. 
+    In \code{mc_tipa dir3d}, photons are propagated in 3d until the first
         scattering occurs, after that the photon is captured within the current
         column.
-		}
+        }
+\ifthreedmystic{
+\option{mc_triangular_surface_file}
+    Define a triangular surface for MYSTIC. 
+    \fcode{
+        mc\_triangular\_surface\_file file
+    }
+    The file includes the description of a trianglar surfaces.
+    It is expected in  {\sl netcdf}-Format and
+    should include the following fields: 
+    \fcode{vertices (n_vert,3)} Location of vertices (x,y,z)
+    \fcode{triangles (n_tris,3)} Indices of vertices for each triangle (three
+    corners)
+    \fcode{albedo (n_tris)} Surface albedo for each triangle. 
+        }
 \iflidar{
 \option{mc_truncate}
 	Truncate phase function at the specified polar angle mu. 
@@ -4165,6 +4387,9 @@ The default option is Ou.
 	up to a factor of 4 with only little increase in uncertainty. The absorption data are
 	based on HITRAN 2000. Please note that the bands above 2.5 micrometer are not very reliable which, 
 	however, this has only little impact on integrated shortwave radiation.
+	\item[kato2andwandji] 
+        Similar to \code{kato2}, but the UV bands \#3 and \#4 use the improved parameterization 
+        by \citet{WandjiNyamsi2015}.
 	\item[kato2.96]
 	\citet{Kato1999b}, shortwave; optimized version (Seiji Kato, personal communication, 2003);
 	similar to \code{kato2} but based on HITRAN96. Please note that the bands above 2.5 micrometer 
@@ -4347,11 +4572,11 @@ Obsolete, use \code{mol_modify} instead.
 	\end{description}
 		
 \option{no_scattering}
-	Switch scattering off.
+	Switch scattering off for 1D profiles.
 	\fcode{
 	no\_scattering [name]
 	}
-	If \code{name} is not set, all scattering (molecular, aerosol, cloud, ice cloud, and any profile) is switched off.
+	If \code{name} is not set, all scattering (molecular, aerosol, cloud, ice cloud, and any profile) is switched off. 
 
 	Possible choises for the optional argument \code{name} are:
 	\begin{description}
@@ -4363,14 +4588,14 @@ Obsolete, use \code{mol_modify} instead.
 	\end{description}
 		
 \option{number_of_streams}
-	Number of streams used to solve the radiative transfer equation.
-	\fcode{
-	number_of_streams value
-	}
-	Default is 6 for fluxes and 16 for radiances.
-	(For \code{rte_solver fdisort1}, \code{fdisort2} and \code{disort} only
-	even number of streams are possible.)
-		
+    Number of streams used to solve the radiative transfer equation.
+    \fcode{
+    number_of_streams value
+    }
+    Default is 6 for fluxes and 16 for radiances.
+    (For \code{rte_solver fdisort1}, \code{fdisort2} and \code{disort} only
+    even number of streams are possible.)
+        
 \option{output_file}
 	\fcode {             
 	    output\_file filename
@@ -4401,13 +4626,11 @@ Obsolete, use \code{mol_modify} instead.
 	\parameter{sum} 
 	Sum output over wavelength. Useful in combination with the 
 	\code{mol\_abs\_param} option (\code{kato}, \code{kato2}, \code{kato2.96}, 
-	\code{Fu}, \code{avhrr\_kratz}, \code{reptran}).
+	\code{Fu}, \code{avhrr\_kratz}).
         In case of \code{mol\_abs\_param reptran}, the units are automatically converted to \code{per\_band} before summation. 
 	\parameter{integrate} 
 	Integrate output over wavelength for solar and over wavenumber for thermal simulations. 
-	Useful for spectral calculations and \code{mol\_abs\_param lowtran}.
-        In case of \code{mol\_abs\_param reptran} the spectral range of the integration may slightly deviate 
-        from the spectral range specified by the \code{wavelength} option.
+	Useful for spectral calculations, \code{mol\_abs\_param lowtran} and \code{reptran}.
 	\parameter{per\_nm } 
 	Output is given in W/(m$^2$ nm) or mW/(m$^2$ nm) (W or mW is determined by the extraterrestrial spectrum.)
 	\parameter{per\_cm-1 } 
@@ -4549,93 +4772,93 @@ Obsolete, use \code{mol_modify} instead.
 
 %CE Commented for ESA version
 \option{phi}
-	Azimuth output angles (in degrees) in increasing order. 
-	\fcode{
-	phi values
-	}
-	The radiance is output at \code{phi} and \code{umu}.
-	\begin{itemize}
-	\item Sensor in the North (looking South):  0 deg 
-	\item Sensor in the East  (looking West):   90 deg 
-	\item Sensor in the South (looking North):  180 deg 
-	\item Sensor in the West  (looking East):   270 deg 
-	\end{itemize}
-	For all one-dimensional solvers the absolute azimuth does not matter, but only the relative azimuth \code{phi}-\code{phi0}.
-		
+    Azimuth output angles (in degrees) in increasing order. 
+    \fcode{
+    phi values
+    }
+    The radiance is output at \code{phi} and \code{umu}.
+    \begin{itemize}
+    \item Sensor in the North (looking South):  0 deg 
+    \item Sensor in the East  (looking West):   90 deg 
+    \item Sensor in the South (looking North):  180 deg 
+    \item Sensor in the West  (looking East):   270 deg 
+    \end{itemize}
+    For all one-dimensional solvers the absolute azimuth does not matter, but only the relative azimuth \code{phi}-\code{phi0}.
+        
 \option{phi0}
-	Azimuth angle of the sun (0 to 360 degrees). 
-	\fcode{phi0 value}
-	\begin{itemize}
-	\item Sun in the South:    0 degrees
-	\item Sun in the West:    90 degrees
-	\item Sun in the North: 180 degrees
-	\item Sun in the East: 270 degrees
-	\end{itemize}
-	For all one-dimensional solvers the absolute azimuth does not matter, but only the relative azimuth \code{phi}-\code{phi0}.
-		
+    Azimuth angle of the sun (0 to 360 degrees). 
+    \fcode{phi0 value}
+    \begin{itemize}
+    \item Sun in the South:    0 degrees
+    \item Sun in the West:    90 degrees
+    \item Sun in the North: 180 degrees
+    \item Sun in the East: 270 degrees
+    \end{itemize}
+    For all one-dimensional solvers the absolute azimuth does not matter, but only the relative azimuth \code{phi}-\code{phi0}.
+        
 \option{polradtran}
-	Specify polradtran values. This option is only relevant for \code{rte_solver polradtran}.
+    Specify polradtran values. This option is only relevant for \code{rte_solver polradtran}.
 
-	\fcode{
-	polradtran aziorder value
-	}
-	Order of Fourier azimuth series.
-	The value \code{0} (default for irradiance) is the azimuthally symmetric case.
-	For radiance computation a higher order is required, thus the default for radiances is 4. 
+    \fcode{
+    polradtran aziorder value
+    }
+    Order of Fourier azimuth series.
+    The value \code{0} (default for irradiance) is the azimuthally symmetric case.
+    For radiance computation a higher order is required, thus the default for radiances is 4. 
 
-	\fcode{
-	polradtran nstokes value
-	}
-	Number of Stokes parameters
-	where \code{value} is one of
-	\begin{description}
-	\item[1] for I (no polarization, default)
-	\item[2] for I,Q,U (Since V is very small in the atmosphere, it makes sense
-	           to compute only I,Q,U. This saves computation time and
-		   memory).
-	\item[3] for I,Q,U,V
-	\end{description}
-	Default is 1.
+    \fcode{
+    polradtran nstokes value
+    }
+    Number of Stokes parameters
+    where \code{value} is one of
+    \begin{description}
+    \item[1] for I (no polarization, default)
+    \item[2] for I,Q,U (Since V is very small in the atmosphere, it makes sense
+               to compute only I,Q,U. This saves computation time and
+           memory).
+    \item[3] for I,Q,U,V
+    \end{description}
+    Default is 1.
 
-	\fcode{
-	polrdatran src_code value
-	}
-	Radiation sources included
-	which may be
-	\begin{description}
-	\item[0] none
-	\item[1] solar
-	\item[2] thermal
-	\item[3] both
-	\end{description}
-	Default 1.
-		
+    \fcode{
+    polrdatran src_code value
+    }
+    Radiation sources included
+    which may be
+    \begin{description}
+    \item[0] none
+    \item[1] solar
+    \item[2] thermal
+    \item[3] both
+    \end{description}
+    Default 1.
+        
 \option{polradtran_max_delta_tau}
-	Initial layer thickness for doubling; governs accuracy, 10E-5 should be
-	adequate. Do not go beyond half the real precision, i.e. 10e-8 for REAL*8.
-	Default 1.e-05.
-	\fcode{
-	polradtran_max_delta_tau value
-	}
-	This option is only relevant for \code{rte_solver polradtran}.
-		
+    Initial layer thickness for doubling; governs accuracy, 10E-5 should be
+    adequate. Do not go beyond half the real precision, i.e. 10e-8 for REAL*8.
+    Default 1.e-05.
+    \fcode{
+    polradtran_max_delta_tau value
+    }
+    This option is only relevant for \code{rte_solver polradtran}.
+        
 \option{polradtran_quad_type}
-	Type of quadrature used:
-	\fcode{
-	polradtran_quad_type type
-	}
-	where \code{type} is one of
-	\begin{description}
-	\item[G] (default) gaussian
-	\item[D] double gaussian, 
-	\item[L] Lobatto
-	\item[E] extra-angle(s), this must be used of \code{polradtran} is used in 
-	combination with \code{umu}. Will internally use Gaussian scheme (\code{G}). 
-	See also radtran documentation (\file{libsrc_f/README.polRadtran}).
-	\end{description}
-	Default G.                                  
-	This option is only relevant for \code{rte_solver polradtran}.
-		
+    Type of quadrature used:
+    \fcode{
+    polradtran_quad_type type
+    }
+    where \code{type} is one of
+    \begin{description}
+    \item[G] (default) gaussian
+    \item[D] double gaussian, 
+    \item[L] Lobatto
+    \item[E] extra-angle(s), this must be used of \code{polradtran} is used in 
+    combination with \code{umu}. Will internally use Gaussian scheme (\code{G}). 
+    See also radtran documentation (\file{libsrc_f/README.polRadtran}).
+    \end{description}
+    Default G.                                  
+    This option is only relevant for \code{rte_solver polradtran}.
+        
 \option{pressure}
 	The surface pressure (at the user-defined \code{altitude}) in hPa. 
 	\fcode{
@@ -4714,8 +4937,8 @@ Obsolete, use \code{mol_modify} instead.
 	Please refer to \code{wc\_properties} and \code{ic\_properties} for possible choices for \code{property}.
 		
 \option{pseudospherical}
-	Invokes pseudo-spherical geometry in disort/twostr. Default is plane-parallel.
-		
+    Invokes pseudo-spherical geometry in disort/twostr. Default is plane-parallel.
+        
 \option{quiet}
 	If specified, informative messages are turned off. See also \code{verbose}.
 		
@@ -4765,27 +4988,27 @@ Obsolete, use \code{mol_modify} instead.
 	This option has only an effect in combination with \code{radiosonde}.
 		
 \option{raman}
-	\fcode{
-	raman [original]
-	}
-	The \code{raman} option includes single order rotational Raman scattering in 
-	the calculation. The solution treats Raman as a perturbation similar to the 
-	approaches of \citet{Vountas1998} and \citet{Spurr2008}.
-	
-	The \code{raman} option may only be used for spectral calculation.
+    \fcode{
+    raman [original]
+    }
+    The \code{raman} option includes single order rotational Raman scattering in 
+    the calculation. The solution treats Raman as a perturbation similar to the 
+    approaches of \citet{Vountas1998} and \citet{Spurr2008}.
+    
+    The \code{raman} option may only be used for spectral calculation.
 
-	The disort radiative transfer solver with a general source is needed to solve the radiative transfer
-	equation including Raman scattering. This solver is automagically invoked when specifying 
-	the \code{raman} option. It is thus not neccessary to set the \code{rte_solver}.
+    The disort radiative transfer solver with a general source is needed to solve the radiative transfer
+    equation including Raman scattering. This solver is automagically invoked when specifying 
+    the \code{raman} option. It is thus not neccessary to set the \code{rte_solver}.
 
-	The \code{raman} option is optimized with respect to speed. The optimized implementation
-	should be just as accurate as the original version. To use the original version
-	invode \code{raman original}. With the optional argument \code{original} each wavelength 
-	is treated individually and is thus accurate, but computationally very expensive. 
+    The \code{raman} option is optimized with respect to speed. The optimized implementation
+    should be just as accurate as the original version. To use the original version
+    invode \code{raman original}. With the optional argument \code{original} each wavelength 
+    is treated individually and is thus accurate, but computationally very expensive. 
 
-	Please note that while the \code{raman} option has been extensively tested and verified, it 
-	is nevertheless a new option, hence, use it with care.
-		
+    Please note that while the \code{raman} option has been extensively tested and verified, it 
+    is nevertheless a new option, hence, use it with care.
+        
 \option{rayleigh_depol}
 	Rayleigh depolarization factor.
 	\fcode{
@@ -4822,142 +5045,155 @@ but refractive index - 1 must be provided for better accuracy. The file must hav
 	you need this contact the author. Otherwise, do not use.
 		
 \option{rte_solver}
-	Set the radiative transfer equation solver to be used. 
-	\fcode{
-	rte_solver type
-	}
-	If not specified the default \code{rte_solver} is \code{disort}.
-	Choices for \code{type} are
-	\begin{description}
+    Set the radiative transfer equation solver to be used. 
+    \fcode{
+    rte_solver type
+    }
+    If not specified the default \code{rte_solver} is \code{disort}.
+    Choices for \code{type} are
+    \begin{description}
 
-	\parameter{disort}
-	C-version of the disort algorithm, translated from Fortran by Tim Dowling. 
-	This is the recommended discrete ordinate code in {\sl libRadtran}.
-	For documentation see \file{src\_f/DISORT2.doc} as well as the papers and
-	the DISORT report at
-	ftp://climate1.gsfc.nasa.gov/wiscombe/Multiple\_Scatt/.  The intensity
-	correction can be performed according to \citet{nakajima1988} using
-	\code{disort_intcor moments} (like in the original code), or with the 
-	improvements described in (Buras, Dowling, Emde, in preparation; default). Can be run in  
-	plane-parallel geometry (default) or in pseudo-spherical geometry 
-	(using \code{pseudospherical}).
+    \parameter{disort}
+    C-version of the disort algorithm, translated from Fortran by Tim Dowling. 
+    This is the recommended discrete ordinate code in {\sl libRadtran}.
+    For documentation see \file{src\_f/DISORT2.doc} as well as the papers and
+    the DISORT report at
+    ftp://climate1.gsfc.nasa.gov/wiscombe/Multiple\_Scatt/.  The intensity
+    correction can be performed according to \citet{nakajima1988} using
+    \code{disort_intcor moments} (like in the original code), or with the 
+    improvements described in (Buras, Dowling, Emde, in preparation; default). Can be run in  
+    plane-parallel geometry (default) or in pseudo-spherical geometry 
+    (using \code{pseudospherical}).
 
-	\parameter{twostr}
-	C-version of the two--stream radiative transfer solver described by
-	\citet{Kylling1995}. Can be run in plane-parallel geometry (default)
-	or in pseudo-spherical geometry (using \code{pseudospherical}
-	).
+    \parameter{twostr}
+    C-version of the two--stream radiative transfer solver described by
+    \citet{Kylling1995}. Can be run in plane-parallel geometry (default)
+    or in pseudo-spherical geometry (using \code{pseudospherical}
+    ).
 
-	\parameter{fdisort1}
-	The standard plane--parallel disort algorithm by \citet{Stamnes1988c},
-	version 1.3 -- provided for compatibility reasons. Use only if you have troubles with the default			         
+    \parameter{fdisort1}
+    The standard plane--parallel disort algorithm by \citet{Stamnes1988c},
+    version 1.3 -- provided for compatibility reasons. Use only if you have troubles with the default                    
         \code{disort} or for historical reasons. For documentation see \file{src\_f/DISORT.doc} as well 
-	as the papers and the DISORT report at
-	ftp://climate1.gsfc.nasa.gov/wiscombe/Multiple\_Scatt/. To optimize
-	for computational time and memory, please adjust the parameters in
-	\file{src\_f/DISORT.MXD} for your application and re-compile. For your
-	application please use \code{rte_solver fdisort2} which is the advanced
-	version, unless you e.g. want to explore how a specific feature of
-	\code{fdisort2} (e.g. the \citet{nakajima1988} intensity correction)
-	improves the \code{fdisort1} result.
+    as the papers and the DISORT report at
+    ftp://climate1.gsfc.nasa.gov/wiscombe/Multiple\_Scatt/. To optimize
+    for computational time and memory, please adjust the parameters in
+    \file{src\_f/DISORT.MXD} for your application and re-compile. For your
+    application please use \code{rte_solver fdisort2} which is the advanced
+    version, unless you e.g. want to explore how a specific feature of
+    \code{fdisort2} (e.g. the \citet{nakajima1988} intensity correction)
+    improves the \code{fdisort1} result.
 
-	\parameter{fdisort2}
-	Version 2 of the Fortran algorithm disort -- provided for compatibility reasons.
-	Use only if you have troubles with the default \code{disort} or for historical reasons. For documentation see
-	\file{src\_f/DISORT2.doc} as well as the papers and the DISORT report
-	at ftp://climate1.gsfc.nasa.gov/wiscombe/Multiple\_Scatt/
-	\code{fdisort2} has several improvements compared to its 'ancestor'
-	\code{fdisort1} (version 1.3). To optimize for computational time and
-	memory, please adjust the parameters in \code{src_f/DISORT.MXD} for
-	your application and re-compile.
-	Note! \code{fdisort2} is a new version of the original disort code
-	which was implemented in summer 2009. It uses phase functions to
-	calculate the intensity corrections by \citet{nakajima1988} instead of
-	Legendre moments. Hence it needs cloud properties files which contain
-	the phase functions. It is still possible to use the old version of
-	disort, you need to specify \code{disort_intcor moments}.
+    \parameter{fdisort2}
+    Version 2 of the Fortran algorithm disort -- provided for compatibility reasons.
+    Use only if you have troubles with the default \code{disort} or for historical reasons. For documentation see
+    \file{src\_f/DISORT2.doc} as well as the papers and the DISORT report
+    at ftp://climate1.gsfc.nasa.gov/wiscombe/Multiple\_Scatt/
+    \code{fdisort2} has several improvements compared to its 'ancestor'
+    \code{fdisort1} (version 1.3). To optimize for computational time and
+    memory, please adjust the parameters in \code{src_f/DISORT.MXD} for
+    your application and re-compile.
+    Note! \code{fdisort2} is a new version of the original disort code
+    which was implemented in summer 2009. It uses phase functions to
+    calculate the intensity corrections by \citet{nakajima1988} instead of
+    Legendre moments. Hence it needs cloud properties files which contain
+    the phase functions. It is still possible to use the old version of
+    disort, you need to specify \code{disort_intcor moments}.
 
-	\parameter{sdisort}
-	Pseudospherical disort as described by \citet{Dahlback1991}. Double
-	precision version. To optimize for computational time and memory,
-	please adjust the parameters in \file{src\_f/DISORT.MXD} for your
-	application and re-compile.  
+    \parameter{sdisort}
+    Pseudospherical disort as described by \citet{Dahlback1991}. Double
+    precision version. To optimize for computational time and memory,
+    please adjust the parameters in \file{src\_f/DISORT.MXD} for your
+    application and re-compile.  
 
-	\parameter{spsdisort} Pseudospherical
-	disort as described by \citet{Dahlback1991}, single precision
-	version. \strong{Warning:} it is not recommended to use
-	\code{spsdisort} for really large solar zenith angles nor for cloudy
-	conditions. For large optical thickness it is numerically unstable and
-	may produce wrong results. To optimize for computational time and
-	memory, please adjust the parameters in \file{src_f/DISORT.MXD} for
-	your application and re-compile.  
+    \parameter{spsdisort} Pseudospherical
+    disort as described by \citet{Dahlback1991}, single precision
+    version. \strong{Warning:} it is not recommended to use
+    \code{spsdisort} for really large solar zenith angles nor for cloudy
+    conditions. For large optical thickness it is numerically unstable and
+    may produce wrong results. To optimize for computational time and
+    memory, please adjust the parameters in \file{src_f/DISORT.MXD} for
+    your application and re-compile.  
 
-	\parameter{polradtran} The plane-parallel radiative transfer solver of \citet{Evans1991}.
-	Includes polarization. The full implementation of the polRadtran
-	solver in \code{uvspec} is quite new (version 1.4). If you find
-	unusual behaviour, please contact the {\sl libRadtran} authors.
+    \parameter{polradtran} The plane-parallel radiative transfer solver of \citet{Evans1991}.
+    Includes polarization. The full implementation of the polRadtran
+    solver in \code{uvspec} is quite new (version 1.4). If you find
+    unusual behaviour, please contact the {\sl libRadtran} authors.
 
-	\parameter{ftwostr}
-	Original Fortran-version of the two--stream radiative transfer solver described by
-	\citet{Kylling1995}, in pseudo-spherical geometry.
+    \parameter{ftwostr}
+    Original Fortran-version of the two--stream radiative transfer solver described by
+    \citet{Kylling1995}, in pseudo-spherical geometry.
 
-	\parameter{rodents}
-	Delta-Eddington two--stream code (RObert's Delta-EddingtoN Two-Stream), plane-parallel.
+    \parameter{rodents}
+    Delta-Eddington two--stream code (RObert's Delta-EddingtoN Two-Stream), plane-parallel.
 
-	\undocumented{
-	 \parameter{twostrebe}
-	 Delta-Eddington two--stream solver by Bernhard Mayer. \code{zout_interpolate} is activated automatically.
-	}
+    \undocumented{
+     \parameter{twostrebe}
+     Delta-Eddington two--stream solver by Bernhard Mayer. \code{zout_interpolate} is activated automatically.
+    }
 
-	\parameter{sslidar}
-	A simple single scattering lidar simulator by Robert Buras.
+     \parameter{twomaxrnd}
+     Delta-Eddington two--stream solver with Maximum-Random-Overlap according to \citet{Zdunkowski2007} by Nina Crnivec. As inputs, a \code{wc_file 1D} and/or a \code{ic_file 1D} are required, plus a \code{cloud_fraction_file}. The same cloud fraction is used for water and ice clouds. \code{zout_interpolate} is activated automatically.
 
-	\parameter{sos}
-	A scalar pseudospherical succesive orders of scattering code. Works
-	for solar zenith angles smaller than 90 degrees. Can calculate
-	azimuthally averaged radiances. Set \code{sos_nscat} to specify the order
-	of scattering.
+    \undocumented{
+     \parameter{twomaxrnd3C}
+     Delta-Eddington two--stream solver with Maximum-Random-Overlap according to Zdunkowski et al. by Nina Crnivec. In addition to \code{twomaxrnd} "tripleclouds" by Shonk and Hogan (2008) is considered. A \code{cloud_fraction_file} has to be specified as well as two cloudy columns, defined as profiles wcn (optically thiN) and wck (optically thicK clouds), e.g. \code{profile_file wcn 1D ./wcn.dat}. \code{zout_interpolate} is activated automatically.
+    }
 
-	\ifmystic{
-	\parameter{montecarlo}
-	The MYSTIC Monte Carlo code. Monte Carlo is
-	the method of choice (1) for horizontally
-	inhomogeneous problems; (2) whenever
-	polarization is involved; (3) for applications
-	where spherical geometry plays a role; and (4)
-	whenever sharp features of the scattering
-	phase function play a role, like for the 
-	calculation of the backscatter glory or the
-	aureole.  
-	\parameter{mystic}
-	Same as \code{montecarlo}.
-	}
+    \undocumented{
+     \parameter{twomaxrnd3C_scale_cf}
+    Scaling factor for cloud fraction split.
+    }
 
-	\parameter{tzs} TZS stands for "thermal, zero scattering" and is a
-	very fast analytical solution for the special case of thermal emission
-	in a non-scattering atmosphere. Please note that TZS does only
-	radiance calculations at top of the atmosphere. "Blackbody clouds" may be included 
+    \parameter{sslidar}
+    A simple single scattering lidar simulator by Robert Buras.
+
+    \parameter{sos}
+    A scalar pseudospherical succesive orders of scattering code. Works
+    for solar zenith angles smaller than 90 degrees. Can calculate
+    azimuthally averaged radiances. Set \code{sos_nscat} to specify the order
+    of scattering.
+
+    \ifmystic{
+    \parameter{montecarlo}
+    The MYSTIC Monte Carlo code. Monte Carlo is
+    the method of choice (1) for horizontally
+    inhomogeneous problems; (2) whenever
+    polarization is involved; (3) for applications
+    where spherical geometry plays a role; and (4)
+    whenever sharp features of the scattering
+    phase function play a role, like for the 
+    calculation of the backscatter glory or the
+    aureole.  
+    \parameter{mystic}
+    Same as \code{montecarlo}.
+    }
+
+    \parameter{tzs} TZS stands for "thermal, zero scattering" and is a
+    very fast analytical solution for the special case of thermal emission
+    in a non-scattering atmosphere. Please note that TZS does only
+    radiance calculations at top of the atmosphere. "Blackbody clouds" may be included 
         using the option \code{tzs_cloud_top_height}. 
 
-	\parameter{sss}
-	SSS stands for "solar, single scattering" and is an analytical single
-	scattering approximation which might be reasonable for an optically
-	thin atmosphere. Please note that SSS does only radiance calculations
-	at top of the atmosphere. This is an experimental solver - be careful!
+    \parameter{sss}
+    SSS stands for "solar, single scattering" and is an analytical single
+    scattering approximation which might be reasonable for an optically
+    thin atmosphere. Please note that SSS does only radiance calculations
+    at top of the atmosphere. This is an experimental solver - be careful!
 
-	\undocumented{
-	\parameter{sssi} Missing documentation!!!
-	}
+    \undocumented{
+    \parameter{sssi} Missing documentation!!!
+    }
 
-	\parameter{null}
-	The NULL solver does not solve the radiative transfer
-	equation. However, it sets up the optical properties, and does the
-	post-processing; useful if you are either interested in the overhead
-	time required by a particular model input or if you are simply
-	interested in the optical properties, as output by \code{verbose}.
-	\end{description}
-	Default: \code{disort}
-		
+    \parameter{null}
+    The NULL solver does not solve the radiative transfer
+    equation. However, it sets up the optical properties, and does the
+    post-processing; useful if you are either interested in the overhead
+    time required by a particular model input or if you are simply
+    interested in the optical properties, as output by \code{verbose}.
+    \end{description}
+    Default: \code{disort}
+        
 \undocumented{
 \option{satellite_geometry}
 	With this option the satellite geometry is determinded. The argument for this option 
@@ -4988,35 +5224,35 @@ but refractive index - 1 must be provided for better accuracy. The file must hav
 	system of the satellite, which is determinded by the option \code{satellite_geometry}. 
 		}
 \option{sdisort}
-	Specify sdisort values. This option is only relevant for \code{rte_solver sdisort}.
+    Specify sdisort values. This option is only relevant for \code{rte_solver sdisort}.
 
-	%CE: Commented for ESA version
-	\undocumented{
-	\fcode{
-	sdisort ichapman value
-	}
-	Undocumented option for sdisort. Default is 1.
-	}
+    %CE: Commented for ESA version
+    \undocumented{
+    \fcode{
+    sdisort ichapman value
+    }
+    Undocumented option for sdisort. Default is 1.
+    }
 
-	\fcode{
-	sdisort nscat value
-	}
-	Set the order of scattering. 
-	If \code{value} is set to 1 \code{sdisort} will run in single scattering mode 
-	while if set to 2, \code{sdisort} runs in full multiple scattering mode.
-	Default is 2 for \code{rte_solver sdisort}. 
+    \fcode{
+    sdisort nscat value
+    }
+    Set the order of scattering. 
+    If \code{value} is set to 1 \code{sdisort} will run in single scattering mode 
+    while if set to 2, \code{sdisort} runs in full multiple scattering mode.
+    Default is 2 for \code{rte_solver sdisort}. 
 
-	\fcode{
-	sdisort nrefrac value
-	}
-	Include refraction where \code{value} has the meaning
-	\begin{description}
-	\item[0] No refraction, default.
-	\item[1] Refraction included using fast, but harsh method.
-	\item[2] Refraction included using slow, but accurate method.
-	\end{description}
-	If refraction is included also set parameter \code{refraction_file}.
-		
+    \fcode{
+    sdisort nrefrac value
+    }
+    Include refraction where \code{value} has the meaning
+    \begin{description}
+    \item[0] No refraction, default.
+    \item[1] Refraction included using fast, but harsh method.
+    \item[2] Refraction included using slow, but accurate method.
+    \end{description}
+    If refraction is included also set parameter \code{refraction_file}.
+        
 \option{slit_function_file}
 	If specified, the calculated spectrum is convolved with the function found
 	in the \file{slit\_function\_file}. 
@@ -5035,12 +5271,12 @@ but refractive index - 1 must be provided for better accuracy. The file must hav
 		
 \undocumented{
 \option{sos_nscat}
-	Set the order of scattering for \code{rte_solver sos}.
-	\fcode{
-	sos_nscat value
-	}
-	Default is 20.
-		}
+    Set the order of scattering for \code{rte_solver sos}.
+    \fcode{
+    sos_nscat value
+    }
+    Default is 20.
+        }
 \option{source}
 	Set the radiation source type
 	\fcode{
@@ -5107,36 +5343,36 @@ but refractive index - 1 must be provided for better accuracy. The file must hav
 	by \code{wavelength}. Comments start with \code{\#}. Empty lines are ignored.
 		
 \option{sslidar}
-	Set single scattering lidar parameters (\code{rte_solver sslidar}).
-	\fcode{
-	sslidar variable value
-	}
-	\code{variable} can be one of the following:
-	\begin{description}
-	\item[area] Set area of single scattering lidar in units of square meters (default: 1.0)
-	\item[E0] Set Laser pulse energy for single scattering lidar in units of (default: 0.1)
-	Joule (You can also use a \code{source solar file}
-	instead... not yet implemented.)
-	\item[eff] Set lidar efficiency for single scattering lidar (default: 0.5)
-	\item[position] Set lidar position for single scattering lidar in units of km (default: 0.0)
-	\item[range] Set lidar range bin width for single scattering lidar in units of km (default: 0.1)
-	\end{description}
-		
+    Set single scattering lidar parameters (\code{rte_solver sslidar}).
+    \fcode{
+    sslidar variable value
+    }
+    \code{variable} can be one of the following:
+    \begin{description}
+    \item[area] Set area of single scattering lidar in units of square meters (default: 1.0)
+    \item[E0] Set Laser pulse energy for single scattering lidar in units of (default: 0.1)
+    Joule (You can also use a \code{source solar file}
+    instead... not yet implemented.)
+    \item[eff] Set lidar efficiency for single scattering lidar (default: 0.5)
+    \item[position] Set lidar position for single scattering lidar in units of km (default: 0.0)
+    \item[range] Set lidar range bin width for single scattering lidar in units of km (default: 0.1)
+    \end{description}
+        
 \option{sslidar_nranges}
-	Set number of range bins for single scattering lidar (solver
-	\code{sslidar}). Default is 100.
-		
+    Set number of range bins for single scattering lidar (solver
+    \code{sslidar}). Default is 100.
+        
 \option{sslidar_polarisation}
-	Turn on polarisation measurement for lidar (solver \code{sslidar}). Default is without polarisation.
-		
+    Turn on polarisation measurement for lidar (solver \code{sslidar}). Default is without polarisation.
+        
 \option{sur_temperature}
-	Surface temperature, used for thermal infrared calculations. 
-	\fcode{
-	sur\_temperature value
-	}
-	If not specified, the
-	temperature of the lowest atmospheric level is used as surface temperature.
-		
+    Surface temperature, used for thermal infrared calculations. 
+    \fcode{
+    sur\_temperature value
+    }
+    If not specified, the
+    temperature of the lowest atmospheric level is used as surface temperature.
+        
 \undocumented{
 \option{surface_temperature_map}
 	Specify a surface\_temperature map with a \emph{netCDF} file which is used in combinition 
@@ -5148,7 +5384,6 @@ but refractive index - 1 must be provided for better accuracy. The file must hav
 	\code{libRadtran} reads the value at the nearest pixel to the given \code{latitude} and 
 	\code{longitude}. No spatial interpolation or averaging of the values is done.
 		}
-\undocumented{
 \option{surface_type_map}
 	Specify a surface type map, which is used in combinition with 
 	\code{albedo_library}, \code{latitude}, and \code{longitude} in order to 
@@ -5173,31 +5408,31 @@ but refractive index - 1 must be provided for better accuracy. The file must hav
 	Locations on the pixel boundaries are interpreted as the pixel northward and
 	eastward respectively. E.g. location 0 N, 0 E is interpreted like the pixel ranging from
 	0 to 10min North and from 0 to 10min East.
-		}
+		
 \option{sza}
-	The solar zenith angle (degrees). 
-	\fcode{
-	sza value
-	}
-	The default solar zenith angle is 0.
-		
+    The solar zenith angle (degrees). 
+    \fcode{
+    sza value
+    }
+    The default solar zenith angle is 0.
+        
 \option{sza_file}
-	Location of solar zenith angle file for wavelength-dependent solar
-	zenith angle. 
-	\fcode{
-	sza_file file
-	}
-	This option is useful if you want to simulate an instrument 
-	which scans so slowly that the solar zenith angle may change significantly during 
-	the wavelength scan. 
-	The file must have two or three columns. Column 1 is the wavelength, 
-	in nm, and column 2 the corresponding  solar zenith angle. Optionally
-	the third column may contain the corresponding solar azimuth angle. The solar 
-	azimuth angle is only needed when calculating radiances. The wavelength 
-	grid may be freely set. The solar zenith and azimuth angle will be interpolated to 
-	the wavelength grid used for the radiation calculation.
-	Comments start with \code{\#}. Empty lines are ignored.
-		
+    Location of solar zenith angle file for wavelength-dependent solar
+    zenith angle. 
+    \fcode{
+    sza_file file
+    }
+    This option is useful if you want to simulate an instrument 
+    which scans so slowly that the solar zenith angle may change significantly during 
+    the wavelength scan. 
+    The file must have two or three columns. Column 1 is the wavelength, 
+    in nm, and column 2 the corresponding  solar zenith angle. Optionally
+    the third column may contain the corresponding solar azimuth angle. The solar 
+    azimuth angle is only needed when calculating radiances. The wavelength 
+    grid may be freely set. The solar zenith and azimuth angle will be interpolated to 
+    the wavelength grid used for the radiation calculation.
+    Comments start with \code{\#}. Empty lines are ignored.
+        
 \undocumented{
 \option{test_optical_properties}
 	Write optical properties to file. This is made for test suite. 
@@ -5236,8 +5471,8 @@ where \code{YYYY} is the year, \code{MM} the month, \code{DD} the day,
 \code{hh} the hour, \code{mm} the minute, \code{ss} the second in UTC.
 The time information will be used for a couple of things: 
 
-%\code{time} in combination with \code{latitude}, \code{longitude}, and any \code{map}-option
-%is used to select the location where to read the input data.
+\code{time} in combination with \code{latitude}, \code{longitude}, and any \code{map}-option
+is used to select the location where to read the input data.
 
 \code{time} is used to correct extraterrestrial 
 irradiance for the Sun-Earth distance with the day of year. If not given, 
@@ -5249,14 +5484,14 @@ the solar zenith angle if no \code{sza} is specified.
 \code{time} in combination with \code{latitude} and \code{longitude} is used to choose a
 suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
-%\code{time} in combination with an \code{ECMWF_atmosphere_file} is used to choose
-%a date in the ECMWF input file. 
+\code{time} in combination with an \code{ECMWF_atmosphere_file} is used to choose
+a date in the ECMWF input file. 
 
 %\option{time_interpolate}
 %If a map option is used in combination with \code{time}, the data, which is nearest to the 
 %specified \code{time} is used for the simulation. This means \code{time_interpolate} is switched 
 %off per default.
-%
+
 %If this option is switched on, the data fields stored in the \emph{netCDF} files are interpolated 
 %to the specified \code{time}. (Be aware, that this might cause strange effects for data field 
 %of moving properties. E.g. an interpolated cloud field might have double horizontal extent, 
@@ -5280,34 +5515,34 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
 \undocumented{
 \option{tipa}
-	With the option \code{tipa dirdiff}, the tilted independent
-	pixel (column) approximation (TIPA, the same as TICA) is carried out,
-	where a 3D-cloud file serves as input and the columns are tilted
-	towards the sun (see, e.g., Wapler and Mayer, 2008).  \code{tipa
-	dirdiff} works with all 1D-rte-solvers.  When choosing
-	tipa (\code{tipa dir}), from the "tilted clouds" only the optical
-	depth for the calculation of the direct radiation is derived and used
-	later to calculate the diffuse radiation. To calculate the diffuse
-	radiation, the original cloud-matrix is still necessary /
-	maintained. \code{tipa dir} works only with Roberts (Buras)
-	delta--Eddington two--stream model \code{rodents}.  For both tipa
-	options, a \code{mc_sample_grid} has to be specified as Nx Ny dx dy. A
-	3d-cloud-file (with flag 3) serves as input (see
-	\code{wc_file 3D}). The output is written into mc.flx(.spc),
-	however, a basename via \code{mc_basename} can be given.
-		}
+    With the option \code{tipa dirdiff}, the tilted independent
+    pixel (column) approximation (TIPA, the same as TICA) is carried out,
+    where a 3D-cloud file serves as input and the columns are tilted
+    towards the sun (see, e.g., Wapler and Mayer, 2008).  \code{tipa
+    dirdiff} works with all 1D-rte-solvers.  When choosing
+    tipa (\code{tipa dir}), from the "tilted clouds" only the optical
+    depth for the calculation of the direct radiation is derived and used
+    later to calculate the diffuse radiation. To calculate the diffuse
+    radiation, the original cloud-matrix is still necessary /
+    maintained. \code{tipa dir} works only with Roberts (Buras)
+    delta--Eddington two--stream model \code{rodents}.  For both tipa
+    options, a \code{mc_sample_grid} has to be specified as Nx Ny dx dy. A
+    3d-cloud-file (with flag 3) serves as input (see
+    \code{wc_file 3D}). The output is written into mc.flx(.spc),
+    however, a basename via \code{mc_basename} can be given.
+        }
 \option{tzs_cloud_top_height}
-	Define cloud top height of "blackbody clouds" for radiative transfer solver \code{tzs}.
-		
+    Define cloud top height of "blackbody clouds" for radiative transfer solver \code{tzs}.
+        
 \option{umu}
-	Cosine of output polar angles in increasing order, starting with 
-	negative (downwelling radiance, looking upward) values (if any) and on through 
-	positive (upwelling radiance, looking downward) values. 
-	Must not be zero.
-	\fcode{
-	umu values
-	}
-		
+    Cosine of output polar angles in increasing order, starting with 
+    negative (downwelling radiance, looking upward) values (if any) and on through 
+    positive (upwelling radiance, looking downward) values. 
+    Must not be zero.
+    \fcode{
+    umu values
+    }
+        
 \option{verbose}
 	If specified abundances of informative messages are output to stderr. To make
 	use of this information, you may want to write the standard \code{uvspec} output to 
@@ -5347,229 +5582,229 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 	those bands required for channel 3. Indices start from 1.
 				
 \option{wc_file}
-	Location of file defining water cloud properties. 
-	\fcode{
-	wc\_file type file
-	}
-	\code{type} defines the file type, which can be one of the
-	following:
-	\begin{description}
+    Location of file defining water cloud properties. 
+    \fcode{
+    wc\_file type file
+    }
+    \code{type} defines the file type, which can be one of the
+    following:
+    \begin{description}
 
-	\item[1D] Location of file defining one-dimensional profile.
+    \item[1D] Location of file defining one-dimensional profile.
 
-	The file must contain three columns: Column 1 is the altitude in km,
-	column 2 the liquid water content (LWC) in grams per cubic meter, and
-	column 3 the effective droplet radius in micrometer. Empty lines are
-	ignored. Comments start with \code{\#}.  Note that the definition of
-	cloud altitudes in \code{wc\_file 1D} refers to sea level, not to altitude
-	above ground. E.g., when \code{altitude} is set to 1.63km, and the
-	first cloud level is defined at 3km, the cloud would start at 1.37km
-	above ground.  An example of a water cloud is given in
-	\file{examples/WC.DAT}.
-	
-	Per default the cloud properties are interpreted as layer
-	properties. Before version 1.4 the default was level properties: The
-	optical depth of a layer was calculated using information from the
-	upper and lower levels defining the layer.  
-	To switch to the old behaviour, use \code{interpret\_as\_level}. 
-	See section~\ref{seq:wc} about water clouds for a
-	realistic example how the contents of the \code{wc\_file 1D} are converted
-	to optical properties.
-	
-	\ifthreedmystic{
+    The file must contain three columns: Column 1 is the altitude in km,
+    column 2 the liquid water content (LWC) in grams per cubic meter, and
+    column 3 the effective droplet radius in micrometer. Empty lines are
+    ignored. Comments start with \code{\#}.  Note that the definition of
+    cloud altitudes in \code{wc\_file 1D} refers to sea level, not to altitude
+    above ground. E.g., when \code{altitude} is set to 1.63km, and the
+    first cloud level is defined at 3km, the cloud would start at 1.37km
+    above ground.  An example of a water cloud is given in
+    \file{examples/WC.DAT}.
+    
+    Per default the cloud properties are interpreted as layer
+    properties. Before version 1.4 the default was level properties: The
+    optical depth of a layer was calculated using information from the
+    upper and lower levels defining the layer.  
+    To switch to the old behaviour, use \code{interpret\_as\_level}. 
+    See section~\ref{seq:wc} about water clouds for a
+    realistic example how the contents of the \code{wc\_file 1D} are converted
+    to optical properties.
+    
+    \ifthreedmystic{
 
-	\item[3D] Define a MYSTIC 3D water cloud input file. 
-	In case the \code{rte\_solver} is not \code{mystic},
-	independent column calculations are performed for the 3D field.
-	(See \file{examples/UVSPEC\_WC\_IPA.INP} for an example.)
-	The expected format of the cloud file is: 
-	\fcode{
-	Nx  Ny  Nz flag \\
-	dx  dy  z(1) z(2) ... z(n) \\
-	ix  iy  iz  ext  g     ssa  (if flag == 1)\\
-	ix  iy  iz  ext  reff       (if flag == 2)\\
-	ix  iy  iz  LWC  reff       (if flag == 3)\\
-	}
-	where \code{Nx}, \code{Ny} and \code{Nz} are the number of grid boxes in 
-	\code{x}, \code{y}, and \code{z}-direction.
-	The parameter \code{flag} determines the format of the 3rd and 
-	following lines. In the second line \code{dx} and \code{dy} are the sizes of the boxes in x- 
-	and y-direction in km. 
-	In the third and following lines the indices \code{ix}, \code{iy}, and \code{iz} specify cloudy pixels. 
-	The optical properties of the cloud, are given by the other parameters in the line, 
-	where \code{ext} is the extinction coefficient [1/km], \code{g} the asymmetry parameter,
-	\code{reff} the effective radius [micrometer], and \code{ssa} the single scattering albedo.
-	The conversion from microphysical to optical properties is defined by \code{wc\_properties} 
-	(identical to the 1D case). Note that the first dimension (x)
-	propagates east, and the second dimension (y) north. For more
-	information see section~\ref{sec:mystic}.
+    \item[3D] Define a MYSTIC 3D water cloud input file. 
+    In case the \code{rte\_solver} is not \code{mystic},
+    independent column calculations are performed for the 3D field.
+    (See \file{examples/UVSPEC\_WC\_IPA.INP} for an example.)
+    The expected format of the cloud file is: 
+    \fcode{
+    Nx  Ny  Nz flag \\
+    dx  dy  z(1) z(2) ... z(Nz+1) \\
+    ix  iy  iz  ext  g     ssa  (if flag == 1)\\
+    ix  iy  iz  ext  reff       (if flag == 2)\\
+    ix  iy  iz  LWC  reff       (if flag == 3)\\
+    }
+    where \code{Nx}, \code{Ny} and \code{Nz} are the number of grid boxes in 
+    \code{x}, \code{y}, and \code{z}-direction.
+    The parameter \code{flag} determines the format of the 3rd and 
+    following lines. In the second line \code{dx} and \code{dy} are the sizes of the boxes in x- 
+    and y-direction in km, \code{z()} are the positions of the z-levels in km.
+    In the third and following lines the indices \code{ix}, \code{iy}, and \code{iz} specify cloudy pixels. Indices can take values from 1 to \code{N}.
+    The optical properties of the cloud are given by the other parameters in the line, 
+    where \code{ext} is the extinction coefficient [1/km], \code{g} the asymmetry parameter,
+    \code{reff} the effective radius [micrometer], and \code{ssa} the single scattering albedo.
+    The conversion from microphysical to optical properties is defined by \code{wc\_properties} 
+    (identical to the 1D case). Note that the first dimension (x)
+    propagates east, and the second dimension (y) north. For more
+    information see section~\ref{sec:mystic}.
 
-%	\item[ipa] Define a 3D input file.
-%	Independent column calculations are performed for the 3D field.
-%	As argument a name of a 3D cloud file must be given. This file has to
-%	be in the format as needed by MYSTIC, see \code{wc\_file 3D}.
-%	(See \file{examples/UVSPEC\_WC\_IPA.INP} for an example.)
-	}
-	
-	\item[ipa\_files] A two-column file, defining water cloud property files (see \code{wc\_file 1D}) in the first 
-	column and the correspoding weights in the second column. 
-	The radiative transfer calculation is performed independently for each
-	cloud column and the result is the weighted average of all independent
-	columns. If \code{ic\_file ipa\_files} and \code{wc\_file ipa\_files} are both
-	defined, both must have the same columns in the same order, otherwise
-	\code{uvspec} will complain. See
-	\file{examples/UVSPEC\_WC\_IC\_IPA\_FILES.INP} for an example.
-	
-	\item[moments] A way to specify water cloud extinction coefficient, single
-	scattering albedo, and scattering phase function for each layer.
+%   \item[ipa] Define a 3D input file.
+%   Independent column calculations are performed for the 3D field.
+%   As argument a name of a 3D cloud file must be given. This file has to
+%   be in the format as needed by MYSTIC, see \code{wc\_file 3D}.
+%   (See \file{examples/UVSPEC\_WC\_IPA.INP} for an example.)
+    }
+    
+    \item[ipa\_files] A two-column file, defining water cloud property files (see \code{wc\_file 1D}) in the first 
+    column and the correspoding weights in the second column. 
+    The radiative transfer calculation is performed independently for each
+    cloud column and the result is the weighted average of all independent
+    columns. If \code{ic\_file ipa\_files} and \code{wc\_file ipa\_files} are both
+    defined, both must have the same columns in the same order, otherwise
+    \code{uvspec} will complain. See
+    \file{examples/UVSPEC\_WC\_IC\_IPA\_FILES.INP} for an example.
+    
+    \item[moments] A way to specify water cloud extinction coefficient, single
+    scattering albedo, and scattering phase function for each layer.
 
-	The file specified by 
-	\code{wc\_file moments} has two columns where column 1 is the altitude in km. The second
-	column is the name of a file which defines the optical properties of the layer 
-	starting at the given altitude. The files specified in the second column must 
-	have the following format:
-	\begin{description}
-	\item{Column 1: } 
-	The wavelength in nm. These wavelengths may be different from those in \code{source solar filename}. 
-	Optical properties are interpolated to the requested wavelengths.
-	\item{Column 2:} 
-	The extinction coefficient of the layer in units km-1. 
-	\item{Column 3:} 
-	The single scattering albedo of the layer.
-	\item{Column 4-(nmom+4):} 
-	The moments of the scattering phase function. 
-	\end{description}
-	Note that if using the \code{rte\_solver disort} or \code{rte\_solver
-	fdisort2} it makes good sense to make the number of moments larger
-	than \code{number\_of\_streams} because all moments are used in the calculation. For
-	\code{rte\_solver fdisort1} and \code{rte\_solver polradtran} the number
-	of moments included in the calculations will be \code{number\_of\_streams}+1. Higher
-	order moments will be ignored for these solvers.  Please note that the
-	uppermost line of the \code{wc\_file moments} denotes simply the top altitude
-	of the uppermost layer. The optical properties of this line are
-	consequently ignored. There are two options for this line: either an
-	optical property file with zero optical thickness is specified
-	or "NULL" instead.
+    The file specified by 
+    \code{wc\_file moments} has two columns where column 1 is the altitude in km. The second
+    column is the name of a file which defines the optical properties of the layer 
+    starting at the given altitude. The files specified in the second column must 
+    have the following format:
+    \begin{description}
+    \item{Column 1: } 
+    The wavelength in nm. These wavelengths may be different from those in \code{source solar filename}. 
+    Optical properties are interpolated to the requested wavelengths.
+    \item{Column 2:} 
+    The extinction coefficient of the layer in units km-1. 
+    \item{Column 3:} 
+    The single scattering albedo of the layer.
+    \item{Column 4-(nmom+4):} 
+    The moments of the scattering phase function. 
+    \end{description}
+    Note that if using the \code{rte\_solver disort} or \code{rte\_solver
+    fdisort2} it makes good sense to make the number of moments larger
+    than \code{number\_of\_streams} because all moments are used in the calculation. For
+    \code{rte\_solver fdisort1} and \code{rte\_solver polradtran} the number
+    of moments included in the calculations will be \code{number\_of\_streams}+1. Higher
+    order moments will be ignored for these solvers.  Please note that the
+    uppermost line of the \code{wc\_file moments} denotes simply the top altitude
+    of the uppermost layer. The optical properties of this line are
+    consequently ignored. There are two options for this line: either an
+    optical property file with zero optical thickness is specified
+    or "NULL" instead.
 
-	\end{description}
-		
+    \end{description}
+        
 \option{wc_modify}
-	Modify water cloud optical properties.
-	\fcode{
-	wc\_modify variable scale/set value
-	}
-	\code{variable} can be one of the following parameter:
-	\begin{description}
+    Modify water cloud optical properties.
+    \fcode{
+    wc\_modify variable scale/set value
+    }
+    \code{variable} can be one of the following parameter:
+    \begin{description}
 
-	\parameter{gg}
-	Modify the water cloud asymmetry factor for all wavelengths and altitudes.
-	\begin{description}
-	\item[set]
-	\code{value} can be a float between -1.0 and 1.0. 
-	Please note that this option is only applied if a Henyey-Greenstein 
-	phase function is used but not if an explicit phase function is 
-	defined e.g. with \code{wc\_file moments}. It doesn't make sense to modify only 
-	the first moment of an explicit phase function.  
-	This option is useful only for monochromatic 
-	calculations or in wavelength regions where the optical 
-	properties of water clouds can be considered constant, 
-	e.g. the ultraviolet range. 
-	\item[scale]
-	Scale the water cloud asymmetry factor for all wavelengths and altitudes
-	with \code{value} between 0.0 and 1.0.
-	\end{description}
-	
-	\parameter{ssa}
-	Modify the water cloud single scattering albedo for all wavelengths
-	and altitudes.
-	\begin{description}
-	\item[set] \code{value} can be a float between 0.0 and 1.0. 
-	This option is useful only for monochromatic 
-	calculations or in wavelength regions where the optical properties of water clouds 
-	can be considered constant, e.g. the ultraviolet range.
-	\item[scale]
-	Scale the water cloud single scattering albedo for all wavelengths and altitudes
-	with \code{value} between 0.0 and 1.0.
-	\end{description}
+    \parameter{gg}
+    Modify the water cloud asymmetry factor for all wavelengths and altitudes.
+    \begin{description}
+    \item[set]
+    \code{value} can be a float between -1.0 and 1.0. 
+    Please note that this option is only applied if a Henyey-Greenstein 
+    phase function is used but not if an explicit phase function is 
+    defined e.g. with \code{wc\_file moments}. It doesn't make sense to modify only 
+    the first moment of an explicit phase function.  
+    This option is useful only for monochromatic 
+    calculations or in wavelength regions where the optical 
+    properties of water clouds can be considered constant, 
+    e.g. the ultraviolet range. 
+    \item[scale]
+    Scale the water cloud asymmetry factor for all wavelengths and altitudes
+    with \code{value} between 0.0 and 1.0.
+    \end{description}
+    
+    \parameter{ssa}
+    Modify the water cloud single scattering albedo for all wavelengths
+    and altitudes.
+    \begin{description}
+    \item[set] \code{value} can be a float between 0.0 and 1.0. 
+    This option is useful only for monochromatic 
+    calculations or in wavelength regions where the optical properties of water clouds 
+    can be considered constant, e.g. the ultraviolet range.
+    \item[scale]
+    Scale the water cloud single scattering albedo for all wavelengths and altitudes
+    with \code{value} between 0.0 and 1.0.
+    \end{description}
 
-	\parameter{tau}
-	Modify the total water cloud optical thickness.
-	\begin{description}
-	\item[set] Set optical thickness to a constant value for all wavelengths.
-	The optical thickness defined here is the integral from the surface at the 
-	user-defined \code{altitude} to TOA (top of atmosphere). This option is useful only 
-	for monochromatic calculations or in wavelength regions where the optical properties 
-	of water clouds can be considered constant, e.g. the ultraviolet range.
-	\item[scale] Scale the water cloud optical thickness for all wavelengths and altitudes
-	with \code{value} between 0.0 and 1000000.0. Also works for 3d clouds.
-	\end{description}
+    \parameter{tau}
+    Modify the total water cloud optical thickness.
+    \begin{description}
+    \item[set] Set optical thickness to a constant value for all wavelengths.
+    The optical thickness defined here is the integral from the surface at the 
+    user-defined \code{altitude} to TOA (top of atmosphere). This option is useful only 
+    for monochromatic calculations or in wavelength regions where the optical properties 
+    of water clouds can be considered constant, e.g. the ultraviolet range.
+    \item[scale] Scale the water cloud optical thickness for all wavelengths and altitudes
+    with \code{value} between 0.0 and 1000000.0. Also works for 3d clouds.
+    \end{description}
 
-	\parameter{tau550}
-	Set the water cloud optical thickness at 550nm. 
-	The optical thickness defined here 
-	is the integral from the surface at the user-defined \code{altitude} 
-	to TOA (top of atmosphere). Other wavelengths are scaled accordingly.
-	Note that this option requires for technical reasons that the
-	wavelength interval defined by \code{wavelength} does contain 550nm.
-	\end{description}
-	\fcode{
-	wc\_modify tau550 set value
-	}
-			
+    \parameter{tau550}
+    Set the water cloud optical thickness at 550nm. 
+    The optical thickness defined here 
+    is the integral from the surface at the user-defined \code{altitude} 
+    to TOA (top of atmosphere). Other wavelengths are scaled accordingly.
+    Note that this option requires for technical reasons that the
+    wavelength interval defined by \code{wavelength} does contain 550nm.
+    \end{description}
+    \fcode{
+    wc\_modify tau550 set value
+    }
+            
 \option{wc_properties}
-	Define how liquid water content and effective radius are translated to optical properties.
-	\fcode{
-	wc\_properties property [interpolate]
-	}
-	Possible choices for \code{property} are:
-	\begin{description}
-	\parameter{hu} 
-	Parameterization by \citet{Hu1993}; 
-	this is the default setting. Note that 
-	the parameterization is somewhat different for \code{mol\_abs\_param FU} than for all other 
-	cases because in the latter case the parameterization from the newer (March 2000) 
-	Fu and Liou code is used while otherwise the data are taken from the original 
-	paper by \citet{Hu1993}. Note that this parameterization has been
-	developed to calculate irradiances, hence it is less suitable for radiances.
-	This is due to the use of the Henyey-Greenstein phase function as an approximation
-	of the real Mie phase function.
-	\parameter{echam4} 
-	Use the very simple two-band parameterization of the ECHAM4 climate model, described 
-	in \cite{Roeckner1996}; this is probably only meaningful if you want to compare
-	your results with ECHAM4, the two bands are 0.2 - 0.68 micrometer and 0.68 - 4.0 micrometer;
-	within these bands, the optical properties are assumed constant.
-	\parameter{mie} 
-	Use pre-calculated Mie tables; useful for \code{mol\_abs\_param}; 
-	the tables are expected in \code{data\_files\_path}\file{/correlated\_k/.../}. \\
-	For spectral or pseudo-spectral (\code{mol\_abs\_param sbdart}) calculations, 
-	a set of pre-calculated tables is also available.
-	%CE: commented some parts. Should be rewritten when new Mie tables are well
-	% optimized.
-	% the wavelength grid points of these 
-	%data has been carefully selected such that the extinction cross section, 
-	%single scattering albedo, and the asymmetry parameter are accurate to 1\% 
-	%(compared to the fully-resolved Mie calculation) for all wavelengths
-	%between 250nm and 100 micrometer. 
-	For spectral or pseudo-spectral
-	calculations optional argument \code{interpolate} has to be defined explicitely to
-	initiate the interpolation of the optical properties to the internal wavelength grid.
-	%Please note that this option may be extremely memory-consuming because for each 
-	%internal wavelength a full set of Legendre moments of the phase function is 
-	%stored (up to several thousands). 
-	The Mie tables are not part of the standard distribution 
-	(because of their large size) but they are freely available from http://www.libradtran.org. 
-	This is the correct option to calculate radiances, to be preferred over the 
-	Henyey-Greenstein approach of \citet{Hu1993}.
-	\parameter{filename} 
-	Read optical properties from specified filename; file format is as produced 
-	by the \code{mie}-tool of the {\sl libRadtran} package (see \code{output\_user netcdf}).
-	\end{description}
+    Define how liquid water content and effective radius are translated to optical properties.
+    \fcode{
+    wc\_properties property [interpolate]
+    }
+    Possible choices for \code{property} are:
+    \begin{description}
+    \parameter{hu} 
+    Parameterization by \citet{Hu1993}; 
+    this is the default setting. Note that 
+    the parameterization is somewhat different for \code{mol\_abs\_param FU} than for all other 
+    cases because in the latter case the parameterization from the newer (March 2000) 
+    Fu and Liou code is used while otherwise the data are taken from the original 
+    paper by \citet{Hu1993}. Note that this parameterization has been
+    developed to calculate irradiances, hence it is less suitable for radiances.
+    This is due to the use of the Henyey-Greenstein phase function as an approximation
+    of the real Mie phase function.
+    \parameter{echam4} 
+    Use the very simple two-band parameterization of the ECHAM4 climate model, described 
+    in \cite{Roeckner1996}; this is probably only meaningful if you want to compare
+    your results with ECHAM4, the two bands are 0.2 - 0.68 micrometer and 0.68 - 4.0 micrometer;
+    within these bands, the optical properties are assumed constant.
+    \parameter{mie} 
+    Use pre-calculated Mie tables; useful for \code{mol\_abs\_param}; 
+    the tables are expected in \code{data\_files\_path}\file{/correlated\_k/.../}. \\
+    For spectral or pseudo-spectral (\code{mol\_abs\_param sbdart}) calculations, 
+    a set of pre-calculated tables is also available.
+    %CE: commented some parts. Should be rewritten when new Mie tables are well
+    % optimized.
+    % the wavelength grid points of these 
+    %data has been carefully selected such that the extinction cross section, 
+    %single scattering albedo, and the asymmetry parameter are accurate to 1\% 
+    %(compared to the fully-resolved Mie calculation) for all wavelengths
+    %between 250nm and 100 micrometer. 
+    For spectral or pseudo-spectral
+    calculations optional argument \code{interpolate} has to be defined explicitely to
+    initiate the interpolation of the optical properties to the internal wavelength grid.
+    %Please note that this option may be extremely memory-consuming because for each 
+    %internal wavelength a full set of Legendre moments of the phase function is 
+    %stored (up to several thousands). 
+    The Mie tables are not part of the standard distribution 
+    (because of their large size) but they are freely available from http://www.libradtran.org. 
+    This is the correct option to calculate radiances, to be preferred over the 
+    Henyey-Greenstein approach of \citet{Hu1993}.
+    \parameter{filename} 
+    Read optical properties from specified filename; file format is as produced 
+    by the \code{mie}-tool of the {\sl libRadtran} package (see \code{output\_user netcdf}).
+    \end{description}
 
-	With the optional argument \code{interpolate} the water cloud optical properties 
-	are interpolated over wavelength; useful for precalculated optical property files. 
-	Please note that this option may be extremely memory-consuming because for each internal wavelength 
-	a full set of Legendre moments of the phase function is stored (up to several thousands). 
-		
+    With the optional argument \code{interpolate} the water cloud optical properties 
+    are interpolated over wavelength; useful for precalculated optical property files. 
+    Please note that this option may be extremely memory-consuming because for each internal wavelength 
+    a full set of Legendre moments of the phase function is stored (up to several thousands). 
+        
 \option{z_interpolate}
 \option{zout}
 	This option is used to specify the output altitudes in km \emph{above surface altitude}. 
@@ -5620,7 +5855,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 	are interpolated to the levels introduced by \code{zout}, and optical 
 	properties are determined from the interpolated atmospheric properties.
 	If \code{heating\_rate}, \code{rte\_solver polradtran}, \code{rte\_solver rodents},
-	or \code{rte\_solver twostrebe}
+	\code{rte\_solver twostrebe}, \code{rte\_solver twomaxrnd}, \code{rte\_solver twomaxrnd3C}
 	is specified, \code{zout\_interpolate} 
 	will also be automatically activated. 
 	\code{zout\_interpolate} generally causes smoother variation of the optical properties.
@@ -5639,7 +5874,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
   /***************** End of documentation *********************/
 
-  int i=0;
+  int i=0, j=0;
   int brdftype=0;
   int status=0;
   int io=0;
@@ -5721,9 +5956,9 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
   Input.aer.modify = (float **) calloc (MODIFY_VAR_NN, sizeof (float *));
-  for (int i=0; i< MODIFY_VAR_NN; i++) {
+  for (i=0; i< MODIFY_VAR_NN; i++) {
       Input.aer.modify[i] = (float*) calloc (MODIFY_TYPE_NN, sizeof (float));
-      for (int j=0; j< MODIFY_TYPE_NN; j++)	Input.aer.modify[i][j] = NOT_DEFINED_FLOAT;
+      for (j=0; j< MODIFY_TYPE_NN; j++)	Input.aer.modify[i][j] = NOT_DEFINED_FLOAT;
   }
 
 
@@ -5737,7 +5972,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.bandwidth_unit    = UNIT_NOT_DEFINED;        /* cm-1 for thermal, nm for solar */
   Output.print_phi        = 1;                       /* default: print radiances   */
   Input.source		  = SRC_SOLAR;
-  Input.ck_scheme         = CK_NONE;
+  Input.ck_scheme         = CK_REPTRAN;
   Input.ck_h2ocont        = 1;                       /* default is h2o-continuum is on, version 2.1 */
 
   Input.ck_abs 		  = calloc (CK_ABS_NN, sizeof(int));
@@ -5759,15 +5994,15 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.crs_model[CRS_MOL_RAYLEIGH] = CRS_MODEL_BODHAINE;
   Input.crs_model[CRS_MOL_O3]       = CRS_MODEL_MOLINA;
   Input.crs_model[CRS_MOL_NO2]      = CRS_MODEL_BURROWS;
-
+  Input.crs_model[CRS_MOL_O4]       = CRS_MODEL_GREENBLATT;
+  
   Input.so2_spectrum      = SO2_BREMEN;
   Input.co2_spectrum      = CO2_YOSHINO;
   Input.o2_spectrum       = O2_DEFAULT;
   Input.bro_spectrum      = BRO_IASB;
   Input.oclo_spectrum     = OCLO_WAHNER;
   Input.hcho_spectrum     = HCHO_IASB;
-  Input.o4_spectrum       = O4_GREENBLATT;
-
+ 
   Input.UTC.tm_year       = NOT_DEFINED_INTEGER;
   Input.UTC.tm_mon        = NOT_DEFINED_INTEGER;
   Input.UTC.tm_mday       = NOT_DEFINED_INTEGER;
@@ -5845,16 +6080,20 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.cm.sal_netCDF_name  = calloc (FILENAME_MAX+1, sizeof(char));
   Input.cm.sal_scale_factor = 1.0;
 
-  Input.ambrals.ambrals = calloc( BRDF_AMBRALS_NN, sizeof(float) );
-  for ( i=0; i<BRDF_AMBRALS_NN; i++) {
-	Input.ambrals.ambrals[i] = NOT_DEFINED_FLOAT;
-  }
-
   Input.cm.param = calloc( BRDF_CAM_NN, sizeof(float) );
   for ( i=0; i<BRDF_CAM_NN; i++) {
 	Input.cm.param[i] = NOT_DEFINED_FLOAT;
   }
   Input.cm.param[BRDF_CAM_UPHI] = 0.0;
+
+  Input.hapke.hapke = calloc( BRDF_HAPKE_NN, sizeof(float) );
+  for ( i=0; i<BRDF_HAPKE_NN; i++) {
+	Input.hapke.hapke[i] = 0.0;
+  }
+  Input.rossli.rossli = calloc( BRDF_ROSSLI_NN, sizeof(float) );
+  for ( i=0; i<BRDF_ROSSLI_NN; i++) {
+	Input.rossli.rossli[i] = 0.0;
+  }
 
   Input.rpv.rpv = calloc( BRDF_RPV_NN, sizeof(float) );
   for ( i=0; i<BRDF_RPV_NN; i++) {
@@ -5876,9 +6115,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.rte.pol_stokes[3] = 'V';
 
   Input.rte.mc.spherical = calloc ( DIM_NN, sizeof(int) );
+  Input.rte.mc.boxairmass = calloc ( DIM_NN, sizeof(int) );
   Input.rte.mc.ris = calloc ( MC_RIS_NN, sizeof(double) );
   for ( i=0; i<MC_RIS_NN;i++) {
-	Input.rte.mc.ris[i] = 1.0;
+	Input.rte.mc.ris[i] = 0.0;
   }
   Input.rte.mc.abs_unit      = MCABS_UNIT_W_PER_M2_AND_DZ;
   Input.rte.mc.absorption    = MCFORWARD_ABS_NONE;
@@ -5981,10 +6221,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.atm.rs_unit[MOL_N2]   = CM_3;
   Input.atm.rs_add_upper_levels = TRUE;
   Input.atm.mol_mass = calloc(MOL_NN, sizeof(float));
-  Input.atm.mol_mass[MOL_AIR]  = mol_mass_air; /* 28.977  from function ck.c                    in g/MOL */
+  Input.atm.mol_mass[MOL_AIR]  = MOL_MASS_AIR; /* 28.977  from function ck.c                    in g/MOL */
   Input.atm.mol_mass[MOL_O3]   = 48.000;       /*         from function ck.c                    in g/MOL */
   Input.atm.mol_mass[MOL_O2]   = 31.998609;    /* http://www.ch.cam.ac.uk/magnus/MolWeight.html in g/MOL */
-  Input.atm.mol_mass[MOL_H2O]  = mol_mass_wv;  /* 18.015  from function ck.c                    in g/MOL */
+  Input.atm.mol_mass[MOL_H2O]  = MOL_MASS_WV;  /* 18.015  from function ck.c                    in g/MOL */
   Input.atm.mol_mass[MOL_CO2]  = 44.009646;    /* http://www.ch.cam.ac.uk/magnus/MolWeight.html in g/MOL */
   Input.atm.mol_mass[MOL_NO2]  = 46.005333;    /* http://www.ch.cam.ac.uk/magnus/MolWeight.html in g/MOL */
   Input.atm.mol_mass[MOL_BRO]  = 95.902831;    /* http://www.ch.cam.ac.uk/magnus/MolWeight.html in g/MOL */
@@ -6034,7 +6274,6 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.aer.alpha_2 = NOT_DEFINED_FLOAT;
   Input.aer.beta = NOT_DEFINED_FLOAT;
   Input.aer.n_species = NOT_DEFINED_INTEGER;
-  Input.aer.nimag = NOT_DEFINED_FLOAT;
   Input.aer.spec = 0;
   Input.aer.tau_wvl_lambda = NOT_DEFINED_FLOAT;
   Input.aer.tau_wvl_tau = NOT_DEFINED_FLOAT;
@@ -6071,19 +6310,26 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.rte.mc.backward.jslower = NOT_DEFINED_INTEGER;
   Input.rte.mc.backward.jsupper = NOT_DEFINED_INTEGER;
   Input.rte.mc.coherent_backscatter = 0;
-  Input.rte.mc.concentration_is = FALSE;
+  Input.rte.mc.coherent_backscatter_lmode = 1;
+  Input.rte.mc.coherent_backscatter_off = 0;
+  Input.rte.mc.core_inputfile = NULL;
+  Input.rte.mc.core_savefile = NULL;
+  Input.rte.mc.core_scale = -1;
+  Input.rte.mc.core_threshold = 3;
   Input.rte.mc.dt = 1e-07;
   Input.rte.mc.ipa = 0;
-  Input.rte.mc.ixmax = NOT_DEFINED_INTEGER;
-  Input.rte.mc.ixmin = NOT_DEFINED_INTEGER;
-  Input.rte.mc.iymax = NOT_DEFINED_INTEGER;
-  Input.rte.mc.iymin = NOT_DEFINED_INTEGER;
   Input.rte.mc.maxscatters = NOT_DEFINED_INTEGER;
+  Input.rte.mc.minphotons = 0;
+  Input.rte.mc.minscatters = 0;
+  Input.rte.mc.nca = 0;
+  Input.rte.mc.nca_options = NULL;
   Input.rte.mc.polarisation = 0;
   Input.rte.mc.polarisation_state = 0;
+  Input.rte.mc.reference_to_NN = 0;
   Input.rte.mc.reflectalways = 0;
   Input.rte.mc.refraction = 0;
   Input.rte.mc.spectral = 0;
+  Input.rte.mc.spectral_is = FALSE;
   Input.rte.mc.std = 0;
   Input.rte.nstr = 6;
   Input.rte.pol_max_delta_tau = 1e-05;
@@ -6190,6 +6436,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     }
   }
 
+  /* Correlated-k is deactivated by 'mol_abs_param crs' */
+  if (strlen(Input.filename[FN_MOL_TAU_ABS])>0)
+    Input.ck_scheme = CK_CRS;
+  
   /* initialization of correlated-k scheme */
   if ( Input.ck_scheme == CK_REPTRAN && Input.ck_reptran_arg != NULL ) {
     if (strncasecmp("fine", Input.ck_reptran_arg,4)==0)         {Input.ck_reptran_option = REPTRAN_OPTION_FINE;}
@@ -6265,6 +6515,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 	case CRS_MODEL_MOLINA:
 	case CRS_MODEL_DAUMONT:
 	case CRS_MODEL_BOGUMIL:
+	case CRS_MODEL_SERDYUCHENKO:
 		break;
 	default:
 		fprintf(stderr, "Unknown 'crs_model' for 'o3'.\nPlease read the documentation for valid crs_models.\n");
@@ -6273,11 +6524,20 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   switch (Input.crs_model[CRS_MOL_NO2]) {
 	case CRS_MODEL_BOGUMIL:
 	case CRS_MODEL_BURROWS:
+	case CRS_MODEL_VANDAELE:
 		break;
 	default:
 		fprintf(stderr, "Unknown 'crs_model' for 'no2'.\nPlease read the documentation for valid crs_models.\n");
 		ierror++;
   }
+  switch (Input.crs_model[CRS_MOL_O4]) {
+	case CRS_MODEL_GREENBLATT:
+	case CRS_MODEL_THALMAN:
+		break;
+	default:
+		fprintf(stderr, "Unknown 'crs_model' for 'no2'.\nPlease read the documentation for valid crs_models.\n");
+		ierror++;
+		}		
 
   /*Calculate latitude and longitude*/
   if (Input.lat_signum)		Input.latitude  = Input.lat_signum * ( Input.lat_degrees + Input.lat_minutes / 60.0 + Input.lat_seconds / 3600.0 );
@@ -6307,8 +6567,17 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
      else if (strncasecmp(Input.output_unit_processing,"per_band",11) == 0) Input.output_unit= UNIT_PER_BAND;
      else {fprintf(stderr,"Unknown 'output %s'\n", Input.output_unit_processing);
          ierror++;}
-     if ((Input.processing==PROCESS_SUM) && (Input.ck_scheme==CK_REPTRAN)) Input.output_unit= UNIT_PER_BAND; /* to make summation over band-integrated quantities */
+     if ((Input.processing==PROCESS_SUM) && (Input.ck_scheme==CK_REPTRAN)){
+       if (strlen(Input.filename[FN_EXTRATERRESTRIAL]) == 0)
+         Input.output_unit= UNIT_PER_BAND; /* to make summation over band-integrated quantities */
+       else{
+         fprintf(stderr,"*** Error, using 'output_process sum' in combination with REPTRAN provides\n");
+         fprintf(stderr,"*** accurate results only if no 'source solar/thermal file' is specified.\n");
+         fprintf(stderr,"*** Please use 'output_process integrate' for spectral integrations.\n");
+         ierror++;
+       }
      free(Input.output_unit_processing);
+   }
   }
 
   /* initialization for albedo_library option */
@@ -6430,6 +6699,14 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     }
   }
 
+  if (Input.rte.fisot == 1) {
+     if ( (Input.rte.solver != SOLVER_DISORT ) && (Input.rte.solver != SOLVER_TWOSTR)) {
+	fprintf(stderr,"Error, 'isotropic_source_toa' may only be used together with \n");
+	fprintf(stderr,"'rte_solver disort' or 'rte_solver twostr'. \n");
+	ierror++;
+     }
+  }
+
   /* To calculate radiances, we want to increase nstr to at least 16 */
   if (Input.rte.numu > 0){
     if(Input.rte.solver==SOLVER_POLRADTRAN){ 
@@ -6486,14 +6763,21 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     fprintf (stderr, "\n");
   }
 
+  /* tzs settings */
+  /* disable scattering for all caoths */
+  if (Input.rte.solver==SOLVER_TZS){
+     ispoff = get_caothoff_index(&Input.caothoff,&Input.n_caothoff, "all");
+     Input.caothoff[ispoff].no_scattering = 1;
+     }
 
   /* defaut zout-level is 0 or -999 for MYSTIC (if no keyword is set) */
   if (Input.atm.nzout == NOT_DEFINED_INTEGER) {
-    if (Input.rte.mc.spectral_is || Input.rte.mc.concentration_is){
-      fprintf(stderr, "Error, calculations with importance sampling ('mc_spectral_is' and 'mc_aerosol_is') require a  \n");
+  /* CE: commented this error, because mc_spectral_is works also with panorama, check when it is needed! */
+  /* if (Input.rte.mc.spectral_is || Input.rte.mc.concentration_is){
+  fprintf(stderr, "Error, calculations with importance sampling ('mc_spectral_is' and 'mc_aerosol_is') require a  \n");
       fprintf(stderr, "       user defined output altitude. Please specify option 'zout'.\n");
       return -1;
-    }  
+      }  */
     switch ( Input.atm.zout_source ) {
     case OUTLEVEL_ZOUT_ABOVE_SUR: 
     case OUTLEVEL_ZOUT_ABOVE_SEA:
@@ -6556,6 +6840,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       case SOLVER_TWOSTR:
       case SOLVER_RODENTS:
       case SOLVER_TWOSTREBE:
+      case SOLVER_TWOMAXRND:
+      case SOLVER_TWOMAXRND3C:
         Input.n_output_user = 5;
         Input.output_user   = calloc (Input.n_output_user, sizeof (int));
         Input.output_user[0] = OUTPUT_USER_WAVE;
@@ -6734,6 +7020,20 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       fprintf (stderr, " ... zout_interpolate is turned on by default for calculations with rte_solver twostrebe\n");
   }
 
+  /* same for twomaxrnd, Bernhard Mayer, Juli 2016 */
+  if (Input.rte.solver == SOLVER_TWOMAXRND && Input.atm.zout_interpolate == NO_ZOUT_INTERPOLATE) {
+    Input.atm.zout_interpolate = ZOUT_INTERPOLATE;
+    if (!Input.quiet)
+      fprintf (stderr, " ... zout_interpolate is turned on by default for calculations with rte_solver twomaxrnd\n");
+  }
+
+  /* same for twomaxrnd3C, Bernhard Mayer, April 2018 */
+  if (Input.rte.solver == SOLVER_TWOMAXRND3C && Input.atm.zout_interpolate == NO_ZOUT_INTERPOLATE) {
+    Input.atm.zout_interpolate = ZOUT_INTERPOLATE;
+    if (!Input.quiet)
+      fprintf (stderr, " ... zout_interpolate is turned on by default for calculations with rte_solver twomaxrnd3C\n");
+  }
+
   /* turn on all zout levels to get range bins for sslidar        */
   /* this is a trick to allocate the memory needed for the output */
   if (Input.rte.solver == SOLVER_SSLIDAR)
@@ -6751,7 +7051,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
   /* copy date to uninitialised UTC structure, if LAT input */
-  if (Input.time_zone == TIME_LAT) {
+  if (Input.time_zone == TIMEZONE_LAT) {
     Input.UTC.tm_year = Input.LAT.tm_year;
     Input.UTC.tm_mon  = Input.LAT.tm_mon;
     Input.UTC.tm_mday = Input.LAT.tm_mday;
@@ -6770,12 +7070,12 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
   /* convert local apperent time to UTC, needs correct day_of_year */
   switch (Input.time_zone) {
-  case TIME_UTC:
+  case TIMEZONE_UTC:
     /* do nothing already UTC */
     /* fprintf (stderr, " *** UTC! ***  year=%4d, month=%2d, day=%2d, hour=%2d, min=%2d, sec=%2d\n", */
     /*                  Input.UTC.tm_year+1900, Input.UTC.tm_mon+1, Input.UTC.tm_mday, Input.UTC.tm_hour, Input.UTC.tm_min, Input.UTC.tm_sec ); */
     break;
-  case TIME_LAT:
+  case TIMEZONE_LAT:
 
     if (Input.verbose) {
       fprintf (stderr, " ... Convert local time to UTC\n"); 
@@ -7225,7 +7525,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
   /* no user-defined transmittance grid if correlated-k */
-  if (Input.ck_scheme!=CK_NONE && Input.ck_scheme!=CK_LOWTRAN && Input.ck_scheme!=CK_REPTRAN && strlen(Input.filename[FN_WLTRANS])>0) {
+  if (Input.ck_scheme!=CK_CRS && Input.ck_scheme!=CK_LOWTRAN && Input.ck_scheme!=CK_REPTRAN && strlen(Input.filename[FN_WLTRANS])>0) {
     strcpy (Input.filename[FN_WLTRANS], "");
     fprintf (stderr, " ... option wavelength_grid_file ignored\n");
     fprintf (stderr, " ... (does not make sense with mol_abs_param)\n");
@@ -7266,6 +7566,13 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     strcpy (Input.filename[FN_RPV_LIB_PATH], Input.filename[FN_PATH]);
     strcat (Input.filename[FN_RPV_LIB_PATH], "albedo/IGBP_rpv_polder/");
 
+  }
+
+  /* check if both mc_albedo_spectral_file and mc_albedo_type were defined */
+  if ((strlen(Input.rte.mc.filename[FN_MC_ALBEDO_TYPE])>0  && strlen(Input.rte.mc.filename[FN_MC_ALBEDO_SPECTRAL])==0) ||
+      (strlen(Input.rte.mc.filename[FN_MC_ALBEDO_TYPE])==0 && strlen(Input.rte.mc.filename[FN_MC_ALBEDO_SPECTRAL])>0)) {
+    fprintf (stderr, "Error, you need to define both mc_albedo_spectral_file and mc_albedo_type if you want 2D RPV\n");
+    return status;
   }
 
   /* set default ALTITUDE map */
@@ -7390,8 +7697,21 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 		}
 		else if (strcasecmp ( Input.caothoff[ispoff].name, "mol") == 0 ) Input.molabs = MOLABS_NONE;
 		else {
-        		fprintf (stderr, "Error 'no_absorption %s' not yet implemented.' \n", Input.caothoff[ispoff].name );
+		       int found_caoth=0;
+		       for (isp=0; isp<Input.n_caoth; isp++) {
+			    if ( strcasecmp ( Input.caothoff[ispoff].name, Input.caoth[isp].name) == 0 ) {
+			    Input.caoth[isp].no_absorption = TRUE;
+			    found_caoth=1;
+			    break;
+			    }
+			}
+			if (!found_caoth) {
+			fprintf (stderr, "Error 'no_absorption %s' not yet implemented.' \n", Input.caothoff[ispoff].name );
+			
+			
+			/*	fprintf (stderr, "Error 'no_absorption %s' not yet implemented.' \n", Input.caothoff[ispoff].name ); */
 			ierror++;
+			}
 		}
 	}
 	if (Input.caothoff[ispoff].no_scattering == 1) {
@@ -7439,6 +7759,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       case CK_KATO:
       case CK_KATO2:
       case CK_KATO2_96:
+      case CK_KATO2ANDWANDJI:
       case CK_FU:
       case CK_AVHRR_KRATZ:
 
@@ -7462,6 +7783,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 	      case CK_KATO:
 	      case CK_KATO2:
 	      case CK_KATO2_96:
+	      case CK_KATO2ANDWANDJI:
 		strcat (Input.caoth[isp].properties_filename, "/correlated_k/kato/");
 		if (Input.verbose)	fprintf(stderr, "... using old mie files specifically created for kato bands\n");
 		break;
@@ -7486,6 +7808,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 	      case CK_KATO:
               case CK_KATO2:
               case CK_KATO2_96:
+	      case CK_KATO2ANDWANDJI:
 		fprintf(stderr, "... interpolate optical properties to central wavelengths of kato bands\n");
 		break;
 	      case CK_FU:
@@ -7499,7 +7822,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 	}
         break;	    
   
-      case CK_NONE:
+      case CK_CRS:
       case CK_RAMAN:
       case CK_LOWTRAN:
       case CK_REPTRAN:
@@ -7538,6 +7861,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       case CK_KATO:
       case CK_KATO2:
       case CK_KATO2_96:
+      case CK_KATO2ANDWANDJI:
       case CK_FU:	 
       case CK_AVHRR_KRATZ:
         if (Input.rte.disort_icm == DISORT_ICM_PHASE) {
@@ -7559,6 +7883,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 	  case CK_KATO:
 	  case CK_KATO2:
 	  case CK_KATO2_96:
+	  case CK_KATO2ANDWANDJI:
 		strcat (Input.caoth[isp].properties_filename, "/correlated_k/kato/");
 		break;
           case CK_FU:
@@ -7571,7 +7896,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         strcat (Input.caoth[isp].properties_filename, "ic.");
         break;	    
   		    
-      case CK_NONE:
+      case CK_CRS:
       case CK_RAMAN:
       case CK_LOWTRAN:
       case CK_REPTRAN:
@@ -7750,6 +8075,84 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 			 Input.caoth[isp].properties_filename);
       break;
       
+      case PROP_YANG2013:
+      /* HEY ice cloud properties */ 
+  
+      if (!Input.caoth[isp].interpolate)  {
+        fprintf (stderr, "* 'ic_properties yang2013' for a spectral calculation requires that the\n");
+        fprintf (stderr, "* cloud optical properties are interpolated to the internal wavelength\n");
+        fprintf (stderr, "* grid. Depending on the number of grid points this may require huge\n");
+        fprintf (stderr, "* amounts of memory and some additional computational time. To use this\n");
+        fprintf (stderr, "* option, please specify explicitely 'ic_properties hey interpolate'\n");
+        fprintf (stderr, "* in the uvspec input!\n");
+        
+        return -1;
+      }
+      else if(Input.wl.start < 200 &&  Input.wl.end > 99000){
+        fprintf(stderr,"* 'ic_properties hey' is available in the\n");
+        fprintf(stderr,"* wavelength range from 0.2 to 99 micrometers. \n");
+        return -1;
+      }
+      else {
+        strcpy (Input.caoth[isp].properties_filename, Input.filename[FN_PATH]);
+        strcat (Input.caoth[isp].properties_filename, "ic/yang2013/");
+        strcat (Input.caoth[isp].properties_filename, "ic.");
+      }
+  
+      switch(Input.caoth[isp].habit){
+      case IC_HABIT_COLUMN_8ELEMENTS:
+        strcat(Input.caoth[isp].properties_filename, "column_8elements");
+        break;
+      case IC_HABIT_DROXTAL:
+        strcat(Input.caoth[isp].properties_filename, "droxtal");
+        break;
+      case IC_HABIT_HOLLOW_BULLET_ROSETTE:
+        strcat(Input.caoth[isp].properties_filename, "hollow_bullet_rosette");
+        break;
+      case IC_HABIT_HOLLOW_COLUMN:
+        strcat(Input.caoth[isp].properties_filename, "hollow_column");
+        break;	
+      case IC_HABIT_PLATE:
+        strcat(Input.caoth[isp].properties_filename, "plate");
+        break;
+      case IC_HABIT_PLATE_10ELEMENTS:
+        strcat(Input.caoth[isp].properties_filename, "plate_10elements");
+        break;
+      case IC_HABIT_PLATE_5ELEMENTS:
+        strcat(Input.caoth[isp].properties_filename, "plate_5elements");
+        break;
+      case IC_HABIT_SOLID_BULLET_ROSETTE:
+        strcat(Input.caoth[isp].properties_filename, "solid_bullet_rosette");
+        break;
+      case IC_HABIT_SOLID_COLUMN:
+         strcat(Input.caoth[isp].properties_filename, "solid_column");
+        break; 
+      default: 
+          fprintf (stderr, "Error, unknown ice particle habit. \n"); 
+          return -1; 
+      }
+
+      switch(Input.caoth[isp].roughness){
+      case IC_ROUGHNESS_SMOOTH:
+        strcat(Input.caoth[isp].properties_filename, ".000");
+        break;
+      case IC_ROUGHNESS_MODERATE:
+        strcat(Input.caoth[isp].properties_filename, ".003");
+        break;
+      case IC_ROUGHNESS_SEVERE:
+        strcat(Input.caoth[isp].properties_filename, ".050");
+        break;
+      default:
+        fprintf (stderr, "Error, unknown ice particle roughness. \n"); 
+          return -1; 
+      }
+      
+
+      if (!Input.quiet)
+        fprintf (stderr, " ... reading ice cloud optical properties from %s*\n", 
+			 Input.caoth[isp].properties_filename);
+      break;
+      
    default:
    break; 
    }
@@ -7791,7 +8194,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
 
   /* 2D RPV */
-  if (strlen(Input.rte.mc.filename[FN_MC_RPV])>0)  {
+  if (strlen(Input.rte.mc.filename[FN_MC_RPV2D_TYPE])>0)  {
     brdftype++;
 
     if (!Input.quiet)
@@ -7799,11 +8202,26 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
 
-  /* check if both rpv_file and rpv_type were defined */
-  if ((strlen(Input.rte.mc.filename[FN_MC_RPV])>0  && strlen(Input.rte.mc.filename[FN_MC_RPVTYPE])==0) ||
-      (strlen(Input.rte.mc.filename[FN_MC_RPV])==0 && strlen(Input.rte.mc.filename[FN_MC_RPVTYPE])>0)) {
-    fprintf (stderr, "Error, you need to define both mc_rpv_file and mc_rpv_type if you want 2D RPV\n");
-    status--;
+  /* check if both brdf_rpv_file and rpv_type were defined */
+  if ((strlen(Input.rte.mc.filename[FN_MC_RPV2D_TYPE])>0  && strlen(Input.rte.mc.filename[FN_MC_RPV_SPECTRAL])==0) ||
+      (strlen(Input.rte.mc.filename[FN_MC_RPV2D_TYPE])==0 && strlen(Input.rte.mc.filename[FN_MC_RPV_SPECTRAL])>0)) {
+    fprintf (stderr, "Error, you need to define both mc_rpv_spectral_file and mc_rpv_type if you want 2D RPV\n");
+    return -1;
+  }
+
+  /* check if both brdf_ambrals_file and ambrals_type were defined */
+  if ((strlen(Input.rte.mc.filename[FN_MC_AMBRALS_TYPE])>0  && strlen(Input.rte.mc.filename[FN_MC_AMBRALS_SPECTRAL])==0) ||
+      (strlen(Input.rte.mc.filename[FN_MC_AMBRALS_TYPE])==0 && strlen(Input.rte.mc.filename[FN_MC_AMBRALS_SPECTRAL])>0)) {
+    fprintf (stderr, "Error, you need to define both mc_ambrals_spectral_file and mc_ambrals_type if you want 2D AMBRALS\n");
+    return -1;
+  }
+
+  /* mc_rpv_file not yet implemented */
+  if (strlen(Input.rte.mc.filename[FN_MC_RPV])>0) {
+    fprintf (stderr, "Error, monochromatic RPV file not yet implemented;\n");
+    fprintf (stderr, "ATTENTION: The option mc_rpv_file has been renamed mc_rpv_spectral_file.\n");
+    fprintf (stderr, "Please use the latter when you need a 2D spectral RPV!\n");
+    return -1;
   }
 
   
@@ -7954,31 +8372,40 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       Input.rte.nstr=16;
     }
   }
+  
+  /******************************************/
+  /* Third, Hapke BRDF                      */
+  /******************************************/
 
+  /* wavelength-(in)dependent BRDF */
+  if (Input.hapke.hapke[BRDF_HAPKE_B0]!=0 || Input.hapke.hapke[BRDF_HAPKE_H]!=0 || Input.hapke.hapke[BRDF_HAPKE_W]!=0|| strlen(Input.filename[FN_HAPKE])>0) {
+    brdftype++;
+    Input.disort2_brdf = BRDF_HAPKE;
+
+    if (!Input.quiet)
+      fprintf (stderr, " ... using Hapke parameterization of the BRDF\n");
+  }
 
   /******************************************/
-  /* Third, AMBRALS                         */
+  /* Fourth, Ross-Li BRDF                   */
   /******************************************/
 
-  if (Input.ambrals.ambrals[BRDF_AMBRALS_ISO] >= 0 || Input.ambrals.ambrals[BRDF_AMBRALS_VOL] >= 0 || Input.ambrals.ambrals[BRDF_AMBRALS_GEO] >= 0) {
+  /* wavelength-(in)dependent BRDF */
+  if (Input.rossli.rossli[BRDF_ROSSLI_ISO]!=0 || Input.rossli.rossli[BRDF_ROSSLI_VOL]!=0 || Input.rossli.rossli[BRDF_ROSSLI_GEO]!=0 || strlen(Input.filename[FN_ROSSLI])>0) {
+    brdftype++;
+    Input.disort2_brdf = BRDF_ROSSLI;
+
+    if (!Input.quiet)
+      fprintf (stderr, " ... using Ross-Li parameterization of the BRDF\n");
+  }
+
+  /* 2D RossLi */
+  if (strlen(Input.rte.mc.filename[FN_MC_ROSSLI])>0)  {
     brdftype++;
 
-    Input.disort2_brdf = BRDF_AMB;
-    
-    fprintf (stderr, " ... AMBRALS BRDF (disort, fdisort2 and MYSTIC only!)\n");
-    fprintf (stderr, " ... iso = %f, vol = %f, geo = %f\n", Input.ambrals.ambrals[BRDF_AMBRALS_ISO], Input.ambrals.ambrals[BRDF_AMBRALS_VOL], Input.ambrals.ambrals[BRDF_AMBRALS_GEO]);
+    if (!Input.quiet)
+      fprintf (stderr, " ... using 2D RossLi parameterization of the BRDF (MYSTIC only!)\n");
   }
-
-  
-  /* Check if only one or more BRDF types have been defined */
-  /* but allow 2D RPV in combination with Cox and Munk      */
-  if (brdftype > 1 && !(Input.disort2_brdf==BRDF_CAM && strlen(Input.rte.mc.filename[FN_MC_RPV])))  {
-    fprintf (stderr, "Error, it does not make sense to define more than one BRDF type!\n");
-    return -1;
-  }
-
-
-
 
   /**********************************************/
   /* Tsang BPDF                                 */
@@ -7997,6 +8424,12 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
      }
   }   
        
+  /* Check if only one or more BRDF types have been defined */
+  /* but allow 2D RPV or RossLi in combination with Cox and Munk */
+  if (brdftype > 1 && !(Input.disort2_brdf==BRDF_CAM && (strlen(Input.rte.mc.filename[FN_MC_ROSSLI])||strlen(Input.rte.mc.filename[FN_MC_RPV2D_TYPE]))))  {
+    fprintf (stderr, "Error, it does not make sense to define more than one BRDF type!\n");
+    return -1;
+  }
   
   /* Number of phase function moments equals the number of streams  */
   /* per default, but may be changed later in the code;             */
@@ -8026,6 +8459,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   case SOLVER_NULL:
   case SOLVER_RODENTS:
   case SOLVER_TWOSTREBE:
+  case SOLVER_TWOMAXRND:
+  case SOLVER_TWOMAXRND3C:
   case SOLVER_TWOSTR:
   case SOLVER_SSLIDAR:
     break;
@@ -8062,6 +8497,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     case SOLVER_NULL:
     case SOLVER_RODENTS:
     case SOLVER_TWOSTREBE:
+    case SOLVER_TWOMAXRND:
+    case SOLVER_TWOMAXRND3C:
     case SOLVER_TWOSTR:
     case SOLVER_SSLIDAR:
       break;
@@ -8184,7 +8621,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
   /* check the wavelength range */
-  if (Input.wl.end>850 && (Input.ck_scheme==CK_NONE && strlen(Input.filename[FN_MOL_TAU_ABS])==0))  {
+  /*
+  if (Input.wl.end>850 && (Input.ck_scheme==CK_CRS && strlen(Input.filename[FN_MOL_TAU_ABS])==0))  {
     status=-1;
     fprintf (stderr, "Error %d, you want to do a spectral calculation for wavelengths larger than 850 nm. While uvspec\n", status);
     fprintf (stderr, "    treats ozone absorption correctly, molecular absorption is NOT considered in monochromatic\n");
@@ -8203,7 +8641,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     return -1;
   }
 
-  if (Input.wl.end>500 && (Input.ck_scheme==CK_NONE && strlen(Input.filename[FN_MOL_TAU_ABS])==0))  {
+  if (Input.wl.end>500 && (Input.ck_scheme==CK_CRS && strlen(Input.filename[FN_MOL_TAU_ABS])==0))  {
     if (!Input.quiet)  {
       fprintf (stderr, "\n");
       fprintf (stderr, "*** WARNING, you want to do a spectral calculation for wavelengths larger\n");
@@ -8231,6 +8669,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       fprintf (stderr, "\n");
     }
   }
+  */
 
 
   /**************************************/
@@ -8241,7 +8680,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   if (Input.rte.mc.readrandomseed) {
     /* read random seed for debugging purposes */
     if ((randomseedfile = fopen(randomseedfilename, "r")) != NULL) {
-      fscanf(randomseedfile,"%d",&rseed);
+      if ( ! fscanf(randomseedfile,"%d",&rseed) ) {
+        fprintf(stderr,"Error reading file %s!\n",randomseedfilename);
+        return -1;
+      }
       (void) fclose (randomseedfile);
     }
   }
@@ -8429,6 +8871,11 @@ void write_flexstor_output(input_struct Input, output_struct *output, FILE *f)
     fprintf (f, "angstrom_alpha()  %f\n", Input.aer.alpha);
     fprintf (f, "angstrom_beta()  %f\n",  Input.aer.beta);
   }
+  if (Input.aer.alpha_2>=-800) {
+    fprintf (f, "king_byrne_alpha_0()  %f\n", Input.aer.alpha_0);
+    fprintf (f, "king_byrne_alpha_1()  %f\n", Input.aer.alpha_1);   
+    fprintf (f, "king_byrne_alpha_2()  %f\n", Input.aer.alpha_2);  
+  }
   fprintf (f, "mol_modify O3 (DU) %f\n", output->column[MOL_O3]);
   fprintf (f, "pressure(mb) %f\n", Input.pressure);
   fprintf (f, "self_day_of_year() %d\n", Input.UTC.tm_yday);
@@ -8574,6 +9021,12 @@ int write_header (input_struct Input, output_struct *output, FILE *f)
     break;
   case SOLVER_TWOSTREBE:
     printf("#rte_solver                   : twostrebe\n");
+    break;
+  case SOLVER_TWOMAXRND:
+    printf("#rte_solver                   : twomaxrnd\n");
+    break;
+  case SOLVER_TWOMAXRND3C:
+    printf("#rte_solver                   : twomaxrnd3C\n");
     break;
   case SOLVER_SSLIDAR:
     printf("#rte_solver                   : sslidar\n");
@@ -8745,7 +9198,9 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
           fprintf (f, "%13.6e ", 4.0*PI*output->uavgup[lev][iv]);
           break;
         case OUTPUT_USER_SPHER_ALB:
-	  fprintf (f, "%13.6e ", output->albmed[iv]);
+          for (iu=0;iu<Input.rte.numu;iu++){
+	       fprintf (f, "%13.6e ", output->albmed[iu][iv]);
+	  }
 	  break;
         case OUTPUT_USER_UU:
    	  if ( Input.raman ) numu = Input.rte.maxumu-Input.rte.nstr; 
@@ -8806,7 +9261,7 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
           break;
         case OUTPUT_USER_M_RAD:
           fprintf (f, "%13.6e ", output->w_zout[lev][iv] * output->atm.microphys.dens_zout[MOL_AIR][lev] 
-                                 * 1.e+6 * 1.e-3 * Input.atm.mol_mass[MOL_AIR] / avogadro );   /* kg/ (m2 day) */
+                                 * 1.e+6 * 1.e-3 * Input.atm.mol_mass[MOL_AIR] / AVOGADRO );   /* kg/ (m2 day) */
           break;
         case OUTPUT_USER_P:
           fprintf (f, "%14.9f ", output->atm.microphys.press_zout[lev]);
@@ -8829,7 +9284,7 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
         case OUTPUT_USER_CLWC: /* (cwd[g/m3]/1000.)/rho_air[kg/m3] == cwc[kg/kg] */
           if (Input.i_wc!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_wc].microphys.lwc_zout[lev] * 1.e-3 / 
-			(output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/avogadro) );
+			(output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/AVOGADRO) );
           else
             fprintf (f, "%13.6e ", 0.0 );
           break;
@@ -8854,7 +9309,7 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
         case OUTPUT_USER_CIWC: /* (cwd[g/m3]/1000.)/rho_air[kg/m3] == cwc[kg/kg] */
           if (Input.i_ic!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_ic].microphys.lwc_zout[lev] * 1.e-3 / 
-			(output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/avogadro) );
+			(output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/AVOGADRO) );
 	  else
 	    fprintf (f, "%13.6e ", 0.0 );
           break;
@@ -8913,7 +9368,7 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
         case OUTPUT_USER_RHO:   /* 1.e+6: convert from cm-3 to m-3; 1.e-3: convert g -> kg */
           i_gas = Input.output_user_gas[io];
           fprintf (f, "%13.6e ", output->atm.microphys.dens_zout[i_gas][lev] 
-                                 * 1.e+6 * 1.e-3 * Input.atm.mol_mass[i_gas] / avogadro);                   
+                                 * 1.e+6 * 1.e-3 * Input.atm.mol_mass[i_gas] / AVOGADRO);                   
           break;
         case OUTPUT_USER_VMR:
           i_gas = Input.output_user_gas[io];
@@ -9039,6 +9494,8 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
 	   case SOLVER_NULL:
 	   case SOLVER_RODENTS:
 	   case SOLVER_TWOSTREBE:
+	   case SOLVER_TWOMAXRND:
+	   case SOLVER_TWOMAXRND3C:
 	   case SOLVER_TWOSTR:
 	   case SOLVER_SSLIDAR:
 	     break;
@@ -9159,9 +9616,9 @@ int write_netCDF_output (input_struct Input, output_struct *output)
   /* get identification number and read data */
 
   /* get id for dimension "time" (the dimension, not the variable) */
-  if      (Input.time_zone==TIME_UTC)
+  if      (Input.time_zone==TIMEZONE_UTC)
     status = nc_inq_dimid (ncid, "time", &(id_ntime));
-  else if (Input.time_zone==TIME_LAT)
+  else if (Input.time_zone==TIMEZONE_LAT)
     status = nc_inq_dimid (ncid, "local_apparent_time", &(id_ntime)); 
   else {
     fprintf (stderr, "Error, unknown time_zone %d (line %d, function '%s' in '%s')\n", Input.time_zone, __LINE__, __func__, __FILE__);
@@ -9232,11 +9689,11 @@ int write_netCDF_output (input_struct Input, output_struct *output)
 
   /* search index */
 
-  if (Input.time_zone==TIME_UTC)
+  if (Input.time_zone==TIMEZONE_UTC)
     status = get_time_index (ncid, Input.UTC, TIME_NEAREST_DATE, 
                              &(nt), &(itime1), &(itime2), &(dt),
                              Input.verbose, Input.quiet);
-  else if (Input.time_zone==TIME_LAT)
+  else if (Input.time_zone==TIMEZONE_LAT)
     status = get_local_apparent_time_index (ncid, Input.LAT, TIME_NEAREST_DATE, 
                                             &(nt), &(itime1), &(itime2), &(dt),
                                             Input.verbose, Input.quiet);
@@ -9919,7 +10376,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         for (iv=0;iv<output->wl.nlambda_h;iv++)
           for (lev=0;lev<output->atm.nzout;lev++) 
             tmp_data_3D[lev][iv] = output->w_zout[lev][iv] * output->atm.microphys.dens_zout[MOL_AIR][lev] 
-                                   * 1.0e+6 * 1.0e-3 * Input.atm.mol_mass[MOL_AIR] / avogadro;   /* kg/ (m2 day) */
+                                   * 1.0e+6 * 1.0e-3 * Input.atm.mol_mass[MOL_AIR] / AVOGADRO;   /* kg/ (m2 day) */
 
         status = write_netCDF_5D_float (ncid, Input.filename[FN_OUTFILE], 
                                         "m_rad", "radiative vertical mass flux", "kg/(m2 day)", tmp_data_3D,
@@ -10031,7 +10488,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         for (lev=0;lev<output->atm.nzout;lev++) 
           if (Input.i_wc!=-1)
             tmp_data_1D[lev] = output->caoth[Input.i_wc].microphys.lwc_zout[lev] * 1.e-3 / 
-                             (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/avogadro) ;
+                             (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/AVOGADRO) ;
 	  else
 	    tmp_data_1D[lev] = 0.0;
 
@@ -10096,7 +10553,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         for (lev=0;lev<output->atm.nzout;lev++) 
           if (Input.i_ic!=-1)
             tmp_data_1D[lev] = output->caoth[Input.i_ic].microphys.lwc_zout[lev] * 1.e-3 / 
-	      (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/avogadro) ;
+	      (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/AVOGADRO) ;
           else
             tmp_data_1D[lev] = 0.0;
         /* write data */
@@ -10274,7 +10731,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         /* calculate data */  /* 1.e+6: convert from cm-3 to m-3; 1.e-3: convert g -> kg */
         for (lev=0;lev<output->atm.nzout;lev++) 
           tmp_data_1D[lev] = output->atm.microphys.dens_zout[i_gas][lev] 
-                               * 1.e+6 * 1.e-3 * Input.atm.mol_mass[i_gas] / avogadro ;  
+                               * 1.e+6 * 1.e-3 * Input.atm.mol_mass[i_gas] / AVOGADRO ;  
 
         /* write data */
         status = write_netCDF_4D_float (ncid, Input.filename[FN_OUTFILE], 
@@ -10895,211 +11352,113 @@ static void free_output(input_struct Input, output_struct *output)
 
 
 static float yytext2float(char* yytext, int which_token, int max_token) {
-  double dnumber=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL;
-  int count=0;
-  char *tmpstring=NULL;
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  count = 1;
-  while ((p = strtok(NULL,token)) != NULL) {
-    count++;
-    if (count == which_token)
-      s = p;
-  }
-  
-  if ((count != which_token) && (count>max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d\n", line_number+1);
-  
-  dnumber = atof(s);
-  free(tmpstring);
-  return (float) dnumber;
+  return (float) yytext2double(yytext, which_token, max_token);
 }
 
 
 static double yytext2double(char* yytext, int which_token, int max_token) {
-  double dnumber=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL;
-  int count=0;
-  char *tmpstring=NULL;
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-  
-  p = strtok(tmpstring,token);
-  count = 1;
-  while ((p = strtok(NULL,token)) != NULL) {
-    count++;
-    if (count == which_token)
-      s = p;
+  double dnumber = 0;
+  char *tok;
+  tok = yytext2string(yytext, which_token, max_token);
+  if (tok != NULL) {
+    dnumber = atof(tok);
+    free(tok);
   }
-  
-  if ((count != which_token) && (count>max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d\n", line_number+1);
-  
-  dnumber = atof(s);
-
-  free(tmpstring);
   return dnumber;
 }
 
-
 static float* yytext2floats(char* yytext, int nary) {
-  int i=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL;
-  char *tmpstring=NULL;
-  
-  /* Fill up ary */
-  float *ary = (float *) calloc (nary, sizeof(float));
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
+  char **toks;
+  char **p;
+  int i, count;
+  float *ary = NULL;
 
-  p = strtok(tmpstring,token);
-  i = 0;
+  toks = tokens_parse(yytext, &count);
 
-  while ((p = strtok(NULL,token)) != NULL)
-    ary[i++] = atof(p);
-
-  free(tmpstring);
+  if (nary < count) {
+    ary = (float *) calloc(nary, sizeof(float));
+    /* intentionally skipping first token */
+    for(i=0, p=toks+1; i < nary; i++, p++) {
+      ary[i] = (float) atof(*p);
+    }
+  } else {
+    fprintf(stderr, "yytext2floats: expected=%d actual=%d\n", nary, count);
+  }
+  if (count > 0) {tokens_free(toks, count);}
   return ary;
 }
 
 
 static int* yytext2integers(char* yytext, int nary) {
-  int i=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL;
-  char *tmpstring=NULL;
-  
-  /* Fill up ary */
-  int *ary    = (int *) calloc (nary, sizeof(int));
+  char **toks;
+  char **p;
+  int i, count;
+  int *ary = NULL;
 
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  i = 0;
-
-  while ((p = strtok(NULL,token)) != NULL)
-    ary[i++] = atoi(p);
-
-  free(tmpstring);
-  return ary;
+  toks = tokens_parse(yytext, &count);
+  if (nary < count) {
+    ary = (int *) calloc(nary, sizeof(int));
+    p=toks;p++; /* Skip first token as that is name of option */
+    for(i=0; i < nary; i++, p++) {
+      ary[i] = atoi(*p);
+    }
+  } else {
+    fprintf(stderr, "yytext2integers: expected=%d actual=%d\n", nary, count);
+  }
+  if (count > 0) {tokens_free(toks, count);}
+ return ary;
 }
 
 
-static int yytext2ntokens(char* yytext) {
-  int nary=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL;
-  char *tmpstring=NULL;
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
+static int yytext2ntokens(char *yytext) {
+  char **toks;
+  int count;
+  toks = tokens_parse(yytext, &count);
+  if (count > 0) {tokens_free(toks, count);}
+  /* 0 means there is 1 token */
+  return count-1;
 
-  /* Get number of ary elements */
-  nary = 0;
-  p = strtok(tmpstring,token);
-
-  while ((p = strtok(NULL,token)) != NULL) 
-    nary++;
-
-  free(tmpstring);
-  return nary;
 }
 
 
 static int yytext2int(char* yytext, int which_token, int max_token) {
-  int inumber=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL;
-  int count=0;
-  char *tmpstring=NULL;
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  count = 1;
-  while ((p = strtok(NULL,token)) != NULL) {
-    count++;
-    if (count == which_token)
-      s = p;
+  int number = 0;
+  char *tok;
+  tok = yytext2string(yytext, which_token, max_token);
+  if (tok != NULL) {
+    number = atoi(tok);
+    free(tok);
   }
-
-  if ((count != which_token) && (count>max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d\n", line_number+1);
-
-  inumber = atoi(s);
-
-  free(tmpstring);
-  return inumber;
+  return number;
 }
 
+static char *yytext2string(char *yytext, int which_token, int max_token) {
+  char **toks;
+  char *ret = NULL;
+  int count;
 
-static char* yytext2string(char* yytext, int which_token, int max_token) {
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL, *string=NULL, *tmpstring=NULL;
-  int count=0;
+  toks = tokens_parse(yytext, &count);
 
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  count = 1;
-  if (which_token == 1) {
-    s = p;
-  }
-  else { 
-    while ((p = strtok(NULL,token)) != NULL) {
-      count++;
-      if (count == which_token)
-        s = p;
-    }
-  }
-
-  if ((count != which_token) && (count > max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d (yytext2string) \n", line_number+1);
-
-  string = (char *) calloc (strlen(s)+1, sizeof (char));
-  strcpy (string, s);
-
-  free(tmpstring);
-
-  return string;
-}
+  if ((which_token > 0) && (which_token <= count)) {
+    ret = strdup(toks[which_token-1]);
+  } else {
+    fprintf(stderr, "yytext2string: expected=%d actual=%d\n", which_token, count);
+    fprintf(stderr, "yytext2string: <%s>\n", yytext);
+    exit(1);
+   }
+  if (count > 0) {tokens_free(toks, count);}
+  return ret;
+} 
 
 
 /* like yytext2string, but string is copied to a pre-allocated string dest */
-static int yytextCstring(char *dest, char* yytext, int which_token, int max_token) {
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL, *tmpstring=NULL;
-  int count=0;
-
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  count = 1;
-  while ((p = strtok(NULL,token)) != NULL) {
-    count++;
-    if (count == which_token)
-      s = p;
+static int yytextCstring(char *dest, char *yytext, int which_token, int max_token) {
+  char *tok;
+  tok = yytext2string(yytext, which_token, max_token);
+  if (tok != NULL) {
+    strcpy(dest, tok);
+    free(tok);
   }
-
-  if ((count != which_token) && (count>max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d\n", line_number+1);
-
-  strcpy (dest, s);
-
-  free(tmpstring);
   return 0;
 }
 
@@ -11171,4 +11530,85 @@ static float* add_cmu_to_umu(int nstr, int numu, int maxumu, float* oldumu, int*
   return umu;
 }
 
+static int tokens_parse_one(char *in, char *out, int max, char **saveptr) {
+
+  int len = 0;
+  int ret = 1;
+  enum {START, IN_QUOTED_TOKEN, IN_TOKEN, ACCEPT} state;
+  state = START;
+
+  /* ensure "out" will be null terminated */
+  memset(out, '\0', max);
+  if (in == NULL) { in = *saveptr; }
+  if (*in == '\0') { ret = 0; }
+  while ((state != ACCEPT) && (*in != '\0')) {
+    switch (*in) {
+      case '"':
+        switch (state) {
+          case START:
+            state = IN_QUOTED_TOKEN;
+            break;
+          case IN_QUOTED_TOKEN:
+          case IN_TOKEN:
+          case ACCEPT:
+            state = ACCEPT;
+            break;
+        }
+        break;
+      case ' ':
+        switch (state) {
+          case START:
+            break;
+          case IN_QUOTED_TOKEN:
+            if (len < max-1) { out[len] = *in; }
+            len++;
+            break;
+          case IN_TOKEN:
+          case ACCEPT:
+            state = ACCEPT;
+            break;
+        }
+        break;
+      case '\n':
+        state = ACCEPT;
+        break;
+      default:
+        if (state == START) { state = IN_TOKEN; }
+        if (len < max-1)    { out[len] = *in; }
+        len++;
+        break;
+    }
+    in++;
+  }
+  *saveptr = in;
+  return ret;
+}
+
+static char **tokens_parse(char *yytext, int *count) {
+  char buf[8192];
+  char *saveptr = NULL;
+  int ret;
+  int i = 0;
+
+  memset(buf, '\0', sizeof(buf));
+  char **toks = NULL;
+  ret = tokens_parse_one(yytext, buf, sizeof(buf), &saveptr);
+  while (ret != 0) {
+    i++;
+    toks = realloc(toks, i * sizeof(char *));
+    toks[i-1] = strdup(buf);
+    ret = tokens_parse_one(NULL, buf, sizeof(buf), &saveptr);
+  }
+  *count = i;
+  return toks;
+}
+
+static void tokens_free(char **toks, int count) {
+  char **p;
+  int i;
+  for(i=0, p=toks; i < count; i++, p++) {
+    if (*p != NULL) { free(*p); }
+  }
+  free(toks);
+}
 

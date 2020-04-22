@@ -14,6 +14,23 @@ Dask has two parts: (1) dynamic task scheduling for executing, and (2) fast proc
 
 The \libraddask{}  is a Python module that integrates \libradtran{} with Dask with the aim to provide a remote and network-distributed \libradtran{}. This functionality is only available via Python, but this is not considered a major issue with most of the work flow is in Python.
 
+For rapid shortwave spectrum work, the band parametrisation by Kato is typically used.
+The Kato model has only 32 spectral bands across the whole available spectrum and all computations
+are reduced to a vector of values representative of the Kato bands.
+
+For more accurate work, such as simulations of satellite views of water targets, the REPTRAN
+model is preferred. REPTRAN provides a full spectral calculation or rapid band model calculations
+for a variety of satellite sensors.
+
+libRadtran is able to calculate radiances and irradiances when the sun is below the horizon by up
+to 9 degrees or more. This is well into "nautical" twilight. The MYSTIC monte carlo solver is
+required to perform twilight computations.
+
+
+\section{Historical Background}
+\todo{Complete history}
+
+
 \section{Example Case Study}
 
 For the practical example in this document, assume the following (will be different in your installation):

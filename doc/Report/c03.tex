@@ -80,8 +80,6 @@ For our application the REPTRAN absorption parameterization data was required, b
     make check 
 \end{lstlisting}
  As the test progresses the test results will display in the terminal (the display shown here has been shortened):
-
-
 \begin{lstlisting}[style=tinysize]
 (base) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3$ conda activate devpy27
 (devpy27) dgriffith@snimbus:~/libRadtran/libRadtran-2.0.3$ make check
@@ -196,6 +194,12 @@ make[1]: Leaving directory '/home/dgriffith/libRadtran/libRadtran-2.0.3/test'
 
 From the above test report it is evident that the \lstinline{MYSTIC polarized surface reflection (BPDF)} test had a result error difference of 1.03\%.
 All the other tests passed.
+
+On the matter of tests failing in the check phase, see\\
+\lstinline{http://www.libradtran.org/doku.php?id=faq}\\
+where it states:\\
+\textbf{How serious are serious differences reported by "make check"?}\\
+They are usually not as serious as it sounds. We haven't had a case where libRadtran worked on one computer and produced really wrong results on another. However, radiative transfer equation solvers like disort are numerical methods which are affected by the limited numerical precisions of processors, and these differ from processor to processor and sometimes even from compiler to compiler. Usually, large differences occur for small numbers. As an example, in the near-infrared the diffuse downward irradiance is very small while the direct beam source is large - hence one may expect some uncertainty in the small diffuse radiation.
 
 \end{enumerate}
 

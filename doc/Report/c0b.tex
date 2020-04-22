@@ -1,33 +1,153 @@
 \chapter{Porting \texttt{scr\_py} to Python 3}
 \label{chap:Portingscr_pytoPython3}
 
-Note: the files currently in the 
-\lstinline{libraddask\libradtran}
-folder were originally from \libradtran{} 2.0.2, and ported to Python 3.
-The Python 3 port of the \libradtran{} 2.0.3 files are still in process.
+\section{Original Work}
+\label{sec:portingAppOriginalWork}
 
-\section{Overview}
+Derek Griffith's original work was done with the Python files for \libradtran{} 2.0.0.
+This work will therefore update from 2.0.0 to 2.0.3 as well as Python 3 porting.  Griffith's additions were as follows:
+\begin{enumerate}
+\item \lstinline{aerosol_options.py}: a number of changes:
+
+\begin{lstlisting}
+--- W:\temp\libradold\200\aerosol_options.py 2020-04-21  10:34:12
++++ W:\temp\libradold\DerekGitHubMORTICIAmorticiarad\aerosol_options.py 2020-04-21  11:01:58
+@@ -23,28 +23,30 @@
+  * Boston, MA 02111-1307, USA.
+  *--------------------------------------------------------------------"""
+ 
++# Modified by Derek Griffith to include aerosol_sizedist_file and aerosol_refrac_index
++
+ 
+ from option_definition import *
+ 
+@@ -205,216 +207,238 @@
+ 			extra_dependencies=['aerosol_haze','aerosol_vulcan','aerosol_visibility','aerosol_season'],
+ 		)
+ 	
++        aerosol_sizedist_file = option(
++            name='aerosol_sizedist_file',
++            group='aerosol',
++            helpstr='Aerosol size distribution file.',
++            documentation=documentation['aerosol_sizedist_file'],
++            tokens=addToken(name='Input.aer.filename[Id]', datatype=file),
++            childs=['aerosol_option_specification'],
++            extra_dependencies=[],
++        )
++        aerosol_refrac_index = option(
++            name='aerosol_refrac_index',
++            group='aerosol',
++            helpstr='Set the aerosol particle refractive index.',
++            documentation=documentation['aerosol_refrac_index'],
++            tokens=[addToken(name='Input.aer.nreal', datatype=float),
++                    addToken(name='Input.aer.nimag', datatype=float, default='NOT_DEFINED_FLOAT', valid_range=[0, 1e6]),
++                    addSetting(name='Input.aer.spec', setting=1)],
++            parents=['aerosol_default'],
++        )
+ 		self.options = [ aerosol_default,
+ 			aerosol_file, aerosol_species_library, aerosol_species_file, 
+ 			aerosol_haze, aerosol_season, aerosol_vulcan, aerosol_visibility,
+ 			aerosol_profile_modtran,
+ 			aerosol_angstrom,aerosol_king_byrne,
+-			aerosol_modify, aerosol_set_tau_at_wvl ]
++                        aerosol_modify, aerosol_set_tau_at_wvl, aerosol_sizedist_file,
++                        aerosol_refrac_index]
+ 
+ 	def __iter__(self):
+ 		return iter(self.options)
+@@ -493,498 +515,536 @@
+ 	\fcode{
+ 	   aerosol\_set\_tau\_at\_wvl lambda tau
+ 	}
++		''',
++
++        'aerosol_sizedist_file': r'''
++        Calculate optical properties from size distribution and index of refraction using Mie
++        theory. Here is an exception from the rule that ALL values defined above are overwritten
++        because the optical thickness profile is re-scaled so that the optical thickness
++        at the first internal wavelength is unchanged. It is done that way to give the user an
++        easy means of specifying the optical thickness at a given wavelength.
++        ''',
++
++        'aerosol_refrac_index': r'''
++        Calculate optical properties from size distribution and index of refraction using Mie
++        theory. Here is an exception from the rule that ALL values defined above are overwritten
++        because the optical thickness profile is re-scaled so that the optical thickness
++        at the first internal wavelength is unchanged. It is done that way to give the user an
++        easy means of specifying the optical thickness at a given wavelength.
+ 		''',
+ }
+\end{lstlisting}
+ 
+
+
+\item \lstinline{spectral_options.py}: added \lstinline{wavelength_step} option:
+
+\begin{lstlisting}
+--- W:\temp\libradold\200\spectral_options.py 2020-04-21  10:34:14
++++ W:\temp\libradold\DerekGitHubMORTICIAmorticiarad\spectral_options.py 2016-09-23  11:33:02
+@@ -46,51 +46,62 @@
+ 			non_parents=['wavelength_index'],
+ 		)
+ 
++		wavelength_step = option(
++			name='wavelength_step',
++			group='spectral',
++			helpstr='Set the wavelength step (in nm) in conjunction with the wavelength range.',
++			documentation=['wavelength_step'],
++			gui_inputs=(),
++			tokens=[],
++			parents=['uvspec'],
++			non_parents=['wavelength_index'],
++		)
++
+ 		wavelength_index = option(
+ 			name='wavelength_index',
+ 			group='spectral',
+\end{lstlisting}
+\end{enumerate}
+
+
+
+\section{Porting}
 \label{sec:Portingscr_pytoPython3}
 
+The following work was done:
 \begin{enumerate}
-\item Change all print statement lines to print function lines.
+\item Change all print statement lines to print functions.
 
-\item Python 3 changed the local import syntax. All local imports must be `from . import xxx`. This rippled through to hundreds of changes.
+\item Python 3 changed the local import syntax. The \libradtran{} files are in a separate folder, which requires am awkward means to specify the folder.
+     All local imports must be of the form from \lstinline{libraddask.libradtran import option_definition}. 
+     
+     I also opted to not do a star import, which means that you must provide `a path' such as 
+     \lstinline{option_definition.option} instead of the starred import version \lstinline{option}.  This change required a large number of changes throughout the code.
 
+\item Updated Python 2 \lstinline{file} type tests to Python 3 \lstinline{io.IOBase} tests. For more detail see:\\
+\lstinline{https://docs.python.org/3/library/io.html#io.IOBase},\\ ``the abstract base class for all I/O classes, acting on streams of bytes.''
+
+\item
+Changed exceptions:
+\lstinline{except Exception, e:} to 
+\lstinline{except Exception as e:}
+
+\item 
+Changed data type from \lstinline{double} to \lstinline{float}.\\
+Changed data type from \lstinline{long} to \lstinline{int}.
+
+
+\item 
+The following files were changed with the original additions by Derek Griffith (see above):
+\lstinline{aerosol_options.py}, \lstinline{spectral_options.py}.  These changes will be applied after all the other Python conversion modifications.
 
 
 \end{enumerate}
 
-
+Todo
 \begin{enumerate}
-
-
-
-\item Updated Python 2 `file` type tests to Python 3 `io.IOBase` tests.
 
 \item Numerous cases where integers were expected and floats were provided (Python 3 is stricter and does not do automatic conversions)
 
 \end{enumerate}
 
-
-\todo{complete porting}
+\section{New Code Testing}
+\todo{complete Testing}

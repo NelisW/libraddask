@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------
- * $Id: lex_starter.l 3054 2014-07-21 09:43:44Z Claudia.Emde $
+ * $Id: lex_starter.l 3512 2019-11-23 10:10:01Z bernhard.mayer $
  * 
  * This file is part of libRadtran.
  * Copyright (c) 1997-2012 by Arve Kylling, Bernhard Mayer,
@@ -89,6 +89,10 @@ int write_user_defined_output (input_struct Input, output_struct *output, FILE *
 int check_if_result_exists     (int *output_user, int n_output_user, int solver, int **valid_result, int quiet);
 int write_netCDF_output        (input_struct Input, output_struct *output);
 
+static int tokens_parse_one    (char *in, char *out, int max, char **saveptr);
+static char **tokens_parse     (char *yytext, int *count);
+static void tokens_free        (char **toks, int count);
+
 char *s, *t, *u;
 int ntokens;
 int mol_id;
@@ -101,7 +105,7 @@ int ierror=0;
 int line_number;
 input_struct Input;
 output_struct Output;
-int i=0, j=0, isp=0, iscr=0, ispoff=0;
+int i=0, j=0, isp=0, iwc=0, iscr=0, ispoff=0;
 int iscloudcover=0, isipafiles=0;
 int position=0;
 float epsilon=1E-7;
@@ -143,7 +147,10 @@ SIGNED_FLOAT {SIGN}?{FLOAT}
 SPACE_SIGNED_FLOAT {SPACE}+{SIGNED_FLOAT}
 SIGNED_FLOATS {SPACE_SIGNED_FLOAT}+
 SIGNED_INTEGER {SIGN}?{INTEGER}
-WORD     [_\.\/A-Za-z][_\.\/A-Za-z0-9\-]*
+/* aky WORD     [_\.\/A-Za-z][_\.\/A-Za-z0-9\-]**/
+WORDX     [_\.\/\\A-Za-z][_\.\/\\A-Za-z0-9\-:]*
+WORDX_OR_SPACE {WORDX}|{SPACE}
+WORD           {WORDX}|(\"{WORDX_OR_SPACE}*\")
 DIM      [1,3][d,D]
 SPACE_PROFILETYPE {SPACE}+({DIM}|{WORD})
 SPACE_WORD {SPACE}+{WORD}
@@ -166,13 +173,13 @@ SIGNED_FLOATS_OR_WORDS {SIGNED_FLOAT_OR_WORD}*
 
  /* PYTHON_OPTIONS */
 aerosol_species_file{SPACE_WORD}{SPACE_WORD}+ {
-				     ntokens = yytext2ntokens(yytext);
+                     ntokens = yytext2ntokens(yytext);
                                      yytextCstring (Input.aer.filename[FN_AER_SPECIES], yytext, 1+1, ntokens+1);
-				     Input.aer.n_species = ntokens - 1; /* one token for type */
+                     Input.aer.n_species = ntokens - 1; /* one token for type */
                                      Input.aer.species_names = (char **) calloc (Input.aer.n_species, sizeof(char *));
                                      for (i=3;i<=ntokens+1; i++) {
-				         Input.aer.species_names[i-3] = yytext2string(yytext, i, ntokens+1);
-				     }
+                         Input.aer.species_names[i-3] = yytext2string(yytext, i, ntokens+1);
+                     }
                                      Input.aer.spec =1; } 
 
 ECHAM_atmosphere_file{SPACE}+{WORD} {Input.atm.rs_source=RS_FROM_ECHAM;
@@ -190,17 +197,17 @@ ECHAM_clouds_file{SPACE}+{WORD}     {isp=get_caoth_index(&Input.caoth,&Input.n_c
                                      Input.caoth[isp].source = CAOTH_FROM_ECHAM;
                                      Input.caoth[isp].layer=TRUE;
                                      yytextCstring (Input.caoth[isp].filename,yytext,2,2);
-				    }
+                    }
 ECMWF_atmosphere_file{SPACE}+{WORD} {Input.atm.rs_source=RS_FROM_ECMWF;
                                      yytextCstring(Input.filename[FN_ECMWF],yytext,2,2);
                                      Input.atm.n_rs_gas=0;
                                      Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_O3;
-				     Input.atm.n_rs_gas++;
-				     mol_id = MOL_O3;
+                     Input.atm.n_rs_gas++;
+                     mol_id = MOL_O3;
                                      Input.atm.rs_unit[mol_id] = MMR;
                                      Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_H2O;
-				     Input.atm.n_rs_gas++;
-				     mol_id = MOL_H2O;
+                     Input.atm.n_rs_gas++;
+                     mol_id = MOL_H2O;
                                      Input.atm.rs_unit[mol_id] = MMR;
                                     }
 ECMWF_ic_reff{SPACE_WORD}{FLOAT_OR_WORD}* {ntokens = yytext2ntokens(yytext);
@@ -210,23 +217,23 @@ ECMWF_ic_reff{SPACE_WORD}{FLOAT_OR_WORD}* {ntokens = yytext2ntokens(yytext);
                                      }
                                      isp=get_caoth_index(&Input.caoth,&Input.n_caoth,"ic",1);
                                      t = yytext2string(yytext, 2,ntokens+1);
-				     if      (strncasecmp("fixed",t,5)==0)  {Input.caoth[isp].reff_prop = REFF_FIXED;
+                     if      (strncasecmp("fixed",t,5)==0)  {Input.caoth[isp].reff_prop = REFF_FIXED;
                                        if (ntokens != 2) {
                                          fprintf (stderr, "Error, wrong number of arguments for option 'ECMWF_ic_reff fixed' on line %d \n",line_number+1); 
                                          ierror++;
                                        }
                                        else Input.caoth[isp].reff =  yytext2float(yytext,2+1,ntokens+1);    
                                      }
-				     else if (strncasecmp("file",t,5)==0)  {Input.caoth[isp].reff_prop = REFF_FILE;
+                     else if (strncasecmp("file",t,5)==0)  {Input.caoth[isp].reff_prop = REFF_FILE;
                                        if (ntokens != 2) {
                                          fprintf (stderr, "Error, wrong number of arguments for option 'ECMWF_ic_reff file' on line %d \n",line_number+1); 
                                          ierror++;
                                        }
                                        yytextCstring(Input.filename[FN_IC_REFF],yytext,2+1,ntokens+1);    
                                      }
-				     else if (strncasecmp("Ou"   ,t,2)==0)  {Input.caoth[isp].reff_prop = REFF_OU;}
-				     else {fprintf(stderr,"Unknown 'ECMWF_ic_reff %s' on line %d\n", s, line_number+1);
-				           ierror++;}
+                     else if (strncasecmp("Ou"   ,t,2)==0)  {Input.caoth[isp].reff_prop = REFF_OU;}
+                     else {fprintf(stderr,"Unknown 'ECMWF_ic_reff %s' on line %d\n", s, line_number+1);
+                           ierror++;}
                                      free(t);
                                     }
 include                             BEGIN(include);
@@ -234,30 +241,30 @@ mc_circ{SPACE_FLOAT}*{SPACE_INTEGER}* {
                                      s = (char *) calloc (strlen(yytext)+1,sizeof(char));
                                      strcpy (s, yytext);
                                      ntokens = yytext2ntokens(s);
-				     Input.rte.mc.dcirc=1000.;
-				     Input.rte.mc.ncirc=10;
-				     if (ntokens>0)
-				       Input.rte.mc.dcirc=yytext2double(yytext,2,ntokens+1);
-				     if (ntokens>1)
-				       Input.rte.mc.ncirc=yytext2int(yytext,3,ntokens+1);
-				     free(s); }
+                     Input.rte.mc.dcirc=1000.;
+                     Input.rte.mc.ncirc=10;
+                     if (ntokens>0)
+                       Input.rte.mc.dcirc=yytext2double(yytext,2,ntokens+1);
+                     if (ntokens>1)
+                       Input.rte.mc.ncirc=yytext2int(yytext,3,ntokens+1);
+                     free(s); }
 mc_escape{SPACE_WORD}*             {
                                     s = (char *) calloc (strlen(yytext)+1,sizeof(char));
-				    strcpy (s, yytext);
+                    strcpy (s, yytext);
                                     ntokens = yytext2ntokens(s);
                                     free(s);            
                                     if (ntokens == 0) { Input.rte.mc.escape = 1;
                                                         Input.rte.mc.locest = 0;}
                                     if (ntokens == 1) {
-				      s = yytext2string(yytext,2,ntokens+1);
-				      if (strncasecmp(s,"on",2)==0) {
-				        Input.rte.mc.escape = 1;
-				        Input.rte.mc.locest = 0;
-				      } else {
-				        Input.rte.mc.escape = 0;
-                                      }				      
-                         	      free(s);
-				    }
+                      s = yytext2string(yytext,2,ntokens+1);
+                      if (strncasecmp(s,"on",2)==0) {
+                        Input.rte.mc.escape = 1;
+                        Input.rte.mc.locest = 0;
+                      } else {
+                        Input.rte.mc.escape = 0;
+                                      }                      
+                                   free(s);
+                    }
                                    }
 mc_spectral_is_wvl{FLOATS}          {
                                      Input.rte.mc.spectral_is = TRUE;
@@ -267,56 +274,57 @@ mc_spectral_is_wvl{FLOATS}          {
                                        Input.rte.mc.spectral_is_wvl[i-2] = yytext2float(yytext,i,Input.rte.mc.spectral_is_nwvl+1);
                                     }
 output_user{WORDS}                  {s = (char *) calloc (strlen(yytext)+1,sizeof(char));
-				     strcpy (s, yytext);
+                     strcpy (s, yytext);
                                      Input.output_user_flag = 1; 
                                      Input.n_output_user = yytext2ntokens(s); 
-				     free(s);
-				     Input.output_user     = calloc (Input.n_output_user, sizeof (int));
-				     Input.output_user_gas = calloc (Input.n_output_user, sizeof (int));
-				     for (i=2;i<=Input.n_output_user+1; i++) {
-				       t = yytext2string(yytext, i, Input.n_output_user+1);  
-				       if      (strcmp("lambda",t)==0 ||  
+                     free(s);
+                     Input.output_user     = calloc (Input.n_output_user, sizeof (int));
+                     Input.output_user_gas = calloc (Input.n_output_user, sizeof (int));
+                     for (i=2;i<=Input.n_output_user+1; i++) {
+                       t = yytext2string(yytext, i, Input.n_output_user+1);  
+                       if      (strcmp("lambda",t)==0 ||  
                                                 strcmp("wavelength",t)==0)    {Input.output_user[i-2] = OUTPUT_USER_WAVE;}
-				       else if (strcmp("lambda_min",t)==0)    {Input.output_user[i-2] = OUTPUT_USER_WAVE_MIN;}
-				       else if (strcmp("lambda_max",t)==0)    {Input.output_user[i-2] = OUTPUT_USER_WAVE_MAX;}
-				       else if (strcmp("wavenumber",t)==0)    {Input.output_user[i-2] = OUTPUT_USER_WAVENUMBER;}
-				       else if (strcmp("wavenumber_min",t)==0){Input.output_user[i-2] = OUTPUT_USER_WAVENUMBER_MIN;}
-				       else if (strcmp("wavenumber_max",t)==0){Input.output_user[i-2] = OUTPUT_USER_WAVENUMBER_MAX;}
-				       else if (strcmp("zout",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SUR;}
-				       else if (strcmp("zout_sur",t)==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SUR;}
-				       else if (strcmp("zout_sea",t)==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SEA;}
-				       else if (strcmp("z_sur",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_Z_SUR;}
-				       else if (strcmp("p",t)       ==0)      {Input.output_user[i-2] = OUTPUT_USER_P;}
-				       else if (strcmp("T",t)       ==0)      {Input.output_user[i-2] = OUTPUT_USER_T;}
-				       else if (strcmp("T_d",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_T_D;}
-				       else if (strcmp("T_sur",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_T_SUR;}
-				       else if (strcmp("theta",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_THETA;}
-				       else if (strcmp("theta_e",t) ==0)      {Input.output_user[i-2] = OUTPUT_USER_THETA_E;}
-				       else if (strcmp("edir",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_EDIR;}
-				       else if (strcmp("eglo",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_EGLO;}
-				       else if (strcmp("edn",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_EDN;}
-				       else if (strcmp("eup",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_EUP;}
-				       else if (strcmp("enet",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ENET;}
-				       else if (strcmp("esum",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ESUM;}
-				       else if (strcmp("fdir",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_FDIR;}
-				       else if (strcmp("fglo",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_FGLO;}
-				       else if (strcmp("fdn",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_FDN;}
-				       else if (strcmp("fup",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_FUP;}
-				       else if (strcmp("f",t)       ==0)      {Input.output_user[i-2] = OUTPUT_USER_F;}
-				       else if (strcmp("uavgdir",t) ==0)      {Input.output_user[i-2] = OUTPUT_USER_UDIR;}
-				       else if (strcmp("uavgglo",t) ==0)      {Input.output_user[i-2] = OUTPUT_USER_UGLO;}
-				       else if (strcmp("uavgdn",t)  ==0)      {Input.output_user[i-2] = OUTPUT_USER_UDN;}
-				       else if (strcmp("uavgup",t)  ==0)      {Input.output_user[i-2] = OUTPUT_USER_UUP;}
-				       else if (strcmp("uavg",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_U;}
+                       else if (strcmp("lambda_min",t)==0)    {Input.output_user[i-2] = OUTPUT_USER_WAVE_MIN;}
+                       else if (strcmp("lambda_max",t)==0)    {Input.output_user[i-2] = OUTPUT_USER_WAVE_MAX;}
+                       else if (strcmp("wavenumber",t)==0)    {Input.output_user[i-2] = OUTPUT_USER_WAVENUMBER;}
+                       else if (strcmp("wavenumber_min",t)==0){Input.output_user[i-2] = OUTPUT_USER_WAVENUMBER_MIN;}
+                       else if (strcmp("wavenumber_max",t)==0){Input.output_user[i-2] = OUTPUT_USER_WAVENUMBER_MAX;}
+                       else if (strcmp("zout",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SUR;}
+                                       else if (strcmp("cth", t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SUR;}
+                       else if (strcmp("zout_sur",t)==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SUR;}
+                       else if (strcmp("zout_sea",t)==0)      {Input.output_user[i-2] = OUTPUT_USER_ZOUT_SEA;}
+                       else if (strcmp("z_sur",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_Z_SUR;}
+                       else if (strcmp("p",t)       ==0)      {Input.output_user[i-2] = OUTPUT_USER_P;}
+                       else if (strcmp("T",t)       ==0)      {Input.output_user[i-2] = OUTPUT_USER_T;}
+                       else if (strcmp("T_d",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_T_D;}
+                       else if (strcmp("T_sur",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_T_SUR;}
+                       else if (strcmp("theta",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_THETA;}
+                       else if (strcmp("theta_e",t) ==0)      {Input.output_user[i-2] = OUTPUT_USER_THETA_E;}
+                       else if (strcmp("edir",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_EDIR;}
+                       else if (strcmp("eglo",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_EGLO;}
+                       else if (strcmp("edn",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_EDN;}
+                       else if (strcmp("eup",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_EUP;}
+                       else if (strcmp("enet",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ENET;}
+                       else if (strcmp("esum",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_ESUM;}
+                       else if (strcmp("fdir",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_FDIR;}
+                       else if (strcmp("fglo",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_FGLO;}
+                       else if (strcmp("fdn",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_FDN;}
+                       else if (strcmp("fup",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_FUP;}
+                       else if (strcmp("f",t)       ==0)      {Input.output_user[i-2] = OUTPUT_USER_F;}
+                       else if (strcmp("uavgdir",t) ==0)      {Input.output_user[i-2] = OUTPUT_USER_UDIR;}
+                       else if (strcmp("uavgglo",t) ==0)      {Input.output_user[i-2] = OUTPUT_USER_UGLO;}
+                       else if (strcmp("uavgdn",t)  ==0)      {Input.output_user[i-2] = OUTPUT_USER_UDN;}
+                       else if (strcmp("uavgup",t)  ==0)      {Input.output_user[i-2] = OUTPUT_USER_UUP;}
+                       else if (strcmp("uavg",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_U;}
                                        else if (strcmp("uu",t)      ==0)      {Input.output_user[i-2] = OUTPUT_USER_UU;}
-				       else if (strcmp("albedo",t)  ==0)      {Input.output_user[i-2] = OUTPUT_USER_ALB;}
-				       else if (strcmp("sza",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_SZA;}
-				       else if (strcmp("c_p",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_C_P;}
-				       else if (strcmp("heat",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_HEAT;}
-				       else if (strcmp("emis",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_EMIS;}
-				       else if (strcmp("abs",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_ABS;}
-				       else if (strcmp("w_rad",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_W_RAD;}
-				       else if (strcmp("m_rad",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_M_RAD;}
+                       else if (strcmp("albedo",t)  ==0)      {Input.output_user[i-2] = OUTPUT_USER_ALB;}
+                       else if (strcmp("sza",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_SZA;}
+                       else if (strcmp("c_p",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_C_P;}
+                       else if (strcmp("heat",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_HEAT;}
+                       else if (strcmp("emis",t)    ==0)      {Input.output_user[i-2] = OUTPUT_USER_EMIS;}
+                       else if (strcmp("abs",t)     ==0)      {Input.output_user[i-2] = OUTPUT_USER_ABS;}
+                       else if (strcmp("w_rad",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_W_RAD;}
+                       else if (strcmp("m_rad",t)   ==0)      {Input.output_user[i-2] = OUTPUT_USER_M_RAD;}
                                        else if (strncasecmp("n_",  t,2)==0)   {Input.output_user[i-2] = OUTPUT_USER_N;}
                                        else if (strncasecmp("rho_",t,4)==0)   {Input.output_user[i-2] = OUTPUT_USER_RHO;}
                                        else if (strncasecmp("vmr_",t,4)==0)   {Input.output_user[i-2] = OUTPUT_USER_VMR;}
@@ -346,8 +354,8 @@ output_user{WORDS}                  {s = (char *) calloc (strlen(yytext)+1,sizeo
                                        else if (strcmp("heat_ad_z",t) ==0)    {Input.output_user[i-2] = OUTPUT_USER_HEAT_AD_Z;}
                                        else if (strcmp("heat_ad",t)   ==0)    {Input.output_user[i-2] = OUTPUT_USER_HEAT_AD;}
                                        else if (strcmp("spher_alb",t)   ==0)  {Input.output_user[i-2] = OUTPUT_USER_SPHER_ALB;;}
-				       else {fprintf(stderr,"Unknown 'output_user %s' on line %d\n", t, line_number+1);
-				       ierror++;}
+                       else {fprintf(stderr,"Unknown 'output_user %s' on line %d\n", t, line_number+1);
+                       ierror++;}
                                        if (Input.output_user[i-2] == OUTPUT_USER_N || 
                                            Input.output_user[i-2] == OUTPUT_USER_RHO || 
                                            Input.output_user[i-2] == OUTPUT_USER_VMR || 
@@ -384,11 +392,11 @@ output_user{WORDS}                  {s = (char *) calloc (strlen(yytext)+1,sizeo
                                             Input.output_user_gas[i-2] = MOL_N2;
                                          else {
                                            fprintf(stderr,"Unknown 'output_user %s' on line %d\n", t, line_number+1);
-				           ierror++;
+                           ierror++;
                                          }
                                        }                                         
                                        free(t);
-				     }
+                     }
                                     }
 
 pressure_out{SIGNED_FLOATS_OR_WORDS}|p_out{SIGNED_FLOATS_OR_WORDS} {
@@ -396,46 +404,46 @@ pressure_out{SIGNED_FLOATS_OR_WORDS}|p_out{SIGNED_FLOATS_OR_WORDS} {
                                       Input.atm.press_zout = calloc (Input.atm.nzout,sizeof(float));
                                       for (i=2;i<=Input.atm.nzout+1; i++) {
                                        Input.atm.zout_source = OUTLEVEL_PRESS;
-				       t = yytext2string(yytext, i, Input.atm.nzout+1);
-				       if      (strncasecmp("toa",t,3)==0) {Input.atm.press_zout[i-2] = ZOUT_TOA;}
-				       else if (strncasecmp("sur",t,3)==0) {Input.atm.press_zout[i-2] = ZOUT_SURFACE;}
-				       else if (strncasecmp("cpt",t,3)==0) {Input.atm.press_zout[i-2] = ZOUT_CPT;}
+                       t = yytext2string(yytext, i, Input.atm.nzout+1);
+                       if      (strncasecmp("toa",t,3)==0) {Input.atm.press_zout[i-2] = ZOUT_TOA;}
+                       else if (strncasecmp("sur",t,3)==0) {Input.atm.press_zout[i-2] = ZOUT_SURFACE;}
+                       else if (strncasecmp("cpt",t,3)==0) {Input.atm.press_zout[i-2] = ZOUT_CPT;}
                                        else                                {Input.atm.press_zout[i-2] = yytext2float(yytext,i,Input.atm.nzout+1);}
                                        free(t);
-				      }
-				     }
+                      }
+                     }
 radiosonde{SPACE}+{WORD}{WORDS}     {Input.atm.rs_source=RS_FROM_FILE;
                                      s = (char *) calloc (strlen(yytext)+1,sizeof(char));
                                      strcpy (s, yytext);
                                      ntokens = yytext2ntokens(s);
                                      free(s);
-				     s =  yytext2string(yytext,2,ntokens+1);
-				     strcpy (Input.filename[FN_RADIOSONDE], s);
+                     s =  yytext2string(yytext,2,ntokens+1);
+                     strcpy (Input.filename[FN_RADIOSONDE], s);
                                      Input.atm.n_rs_gas=0;
                                      free(s);
                                      for (i=3;i<=ntokens+1; i++) {
-				       t = yytext2string(yytext, i, ntokens+1);  
-				       if      (strcmp("O3",t)  ==0||strcmp("o3",t)  ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_O3;  Input.atm.n_rs_gas++; mol_id = MOL_O3;  }
-				       else if (strcmp("O2",t)  ==0||strcmp("o2",t)  ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_O2;  Input.atm.n_rs_gas++; mol_id = MOL_O2;  }
-				       else if (strcmp("H2O",t) ==0||strcmp("h2o",t) ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_H2O; Input.atm.n_rs_gas++; mol_id = MOL_H2O; }
-				       else if (strcmp("CO2",t) ==0||strcmp("co2",t) ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_CO2; Input.atm.n_rs_gas++; mol_id = MOL_CO2; }
-				       else if (strcmp("NO2",t) ==0||strcmp("no2",t) ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_NO2; Input.atm.n_rs_gas++; mol_id = MOL_NO2; }
-				       else if (strcmp("BRO",t) ==0||strcmp("bro",t) ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_BRO; Input.atm.n_rs_gas++; mol_id = MOL_BRO; }
-				       else if (strcmp("OCLO",t)==0||strcmp("oclo",t)==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_OCLO;Input.atm.n_rs_gas++; mol_id = MOL_OCLO;}
-				       else if (strcmp("HCHO",t)==0||strcmp("hcho",t)==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_HCHO;Input.atm.n_rs_gas++; mol_id = MOL_HCHO;}
-				       else if (strcmp("O4",t)==0  ||strcmp("o4",t)==0)   {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_O4;  Input.atm.n_rs_gas++; mol_id = MOL_O4;}
-				       else if (strcmp("SO2",t)==0 ||strcmp("so2",t)==0)  {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_SO2; Input.atm.n_rs_gas++; mol_id = MOL_SO2;}
-				       else if (strcmp("CH4",t)==0 ||strcmp("ch4",t)==0)  {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_CH4; Input.atm.n_rs_gas++; mol_id = MOL_CH4;}
-				       else if (strcmp("N2O",t)==0 ||strcmp("n2o",t)==0)  {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_N2O; Input.atm.n_rs_gas++; mol_id = MOL_N2O;}
-				       else if (strcmp("CO",t)==0 ||strcmp("co",t)==0)    {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_CO;  Input.atm.n_rs_gas++; mol_id = MOL_CO;}
-				       else if (strcmp("N2",t)==0 ||strcmp("n2",t)==0)    {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_N2;  Input.atm.n_rs_gas++; mol_id = MOL_N2;}
-				       else if (strcmp("CM_3",t)==0||strcmp("cm-3",t)==0) { if (mol_id==0 || mol_id>=MOL_NN) ierror++; 
+                       t = yytext2string(yytext, i, ntokens+1);  
+                       if      (strcmp("O3",t)  ==0||strcmp("o3",t)  ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_O3;  Input.atm.n_rs_gas++; mol_id = MOL_O3;  }
+                       else if (strcmp("O2",t)  ==0||strcmp("o2",t)  ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_O2;  Input.atm.n_rs_gas++; mol_id = MOL_O2;  }
+                       else if (strcmp("H2O",t) ==0||strcmp("h2o",t) ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_H2O; Input.atm.n_rs_gas++; mol_id = MOL_H2O; }
+                       else if (strcmp("CO2",t) ==0||strcmp("co2",t) ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_CO2; Input.atm.n_rs_gas++; mol_id = MOL_CO2; }
+                       else if (strcmp("NO2",t) ==0||strcmp("no2",t) ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_NO2; Input.atm.n_rs_gas++; mol_id = MOL_NO2; }
+                       else if (strcmp("BRO",t) ==0||strcmp("bro",t) ==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_BRO; Input.atm.n_rs_gas++; mol_id = MOL_BRO; }
+                       else if (strcmp("OCLO",t)==0||strcmp("oclo",t)==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_OCLO;Input.atm.n_rs_gas++; mol_id = MOL_OCLO;}
+                       else if (strcmp("HCHO",t)==0||strcmp("hcho",t)==0) {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_HCHO;Input.atm.n_rs_gas++; mol_id = MOL_HCHO;}
+                       else if (strcmp("O4",t)==0  ||strcmp("o4",t)==0)   {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_O4;  Input.atm.n_rs_gas++; mol_id = MOL_O4;}
+                       else if (strcmp("SO2",t)==0 ||strcmp("so2",t)==0)  {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_SO2; Input.atm.n_rs_gas++; mol_id = MOL_SO2;}
+                       else if (strcmp("CH4",t)==0 ||strcmp("ch4",t)==0)  {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_CH4; Input.atm.n_rs_gas++; mol_id = MOL_CH4;}
+                       else if (strcmp("N2O",t)==0 ||strcmp("n2o",t)==0)  {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_N2O; Input.atm.n_rs_gas++; mol_id = MOL_N2O;}
+                       else if (strcmp("CO",t)==0 ||strcmp("co",t)==0)    {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_CO;  Input.atm.n_rs_gas++; mol_id = MOL_CO;}
+                       else if (strcmp("N2",t)==0 ||strcmp("n2",t)==0)    {Input.atm.rs_gas[Input.atm.n_rs_gas]=MOL_N2;  Input.atm.n_rs_gas++; mol_id = MOL_N2;}
+                       else if (strcmp("CM_3",t)==0||strcmp("cm-3",t)==0) { if (mol_id==0 || mol_id>=MOL_NN) ierror++; 
                                                                                             else Input.atm.rs_unit[mol_id] = CM_3; }
-				       else if (strcmp("M_3",t) ==0||strcmp("m-3",t) ==0) { if (mol_id==0 || mol_id>=MOL_NN) ierror++;
+                       else if (strcmp("M_3",t) ==0||strcmp("m-3",t) ==0) { if (mol_id==0 || mol_id>=MOL_NN) ierror++;
                                                                                             else Input.atm.rs_unit[mol_id] = M_3;  }
-				       else if (strcmp("MMR",t) ==0||strcmp("mmr",t) ==0) { if (mol_id==0 || mol_id>=MOL_NN) ierror++;
+                       else if (strcmp("MMR",t) ==0||strcmp("mmr",t) ==0) { if (mol_id==0 || mol_id>=MOL_NN) ierror++;
                                                                                             else Input.atm.rs_unit[mol_id] = MMR;  }
-				       else if (strcmp("VMR",t) ==0||strcmp("vmr",t) ==0) { if (mol_id==0 || mol_id>=MOL_NN) ierror++;
+                       else if (strcmp("VMR",t) ==0||strcmp("vmr",t) ==0) { if (mol_id==0 || mol_id>=MOL_NN) ierror++;
                                                                                             else Input.atm.rs_unit[mol_id] = VMR;  }
                                        else if (strcmp("RH" ,t) ==0||strcmp("rh",t) == 0) {
                                          if (mol_id==0 || mol_id>=MOL_NN) 
@@ -448,10 +456,10 @@ radiosonde{SPACE}+{WORD}{WORDS}     {Input.atm.rs_source=RS_FROM_FILE;
                                          else 
                                            Input.atm.rs_unit[mol_id]= RH; 
                                         }
-				       else {fprintf(stderr,"Unknown 'radiosonde ... %s' on line %d\n", t, line_number+1);
-				             ierror++;}
+                       else {fprintf(stderr,"Unknown 'radiosonde ... %s' on line %d\n", t, line_number+1);
+                             ierror++;}
                                        free(t);
-				     }
+                     }
                                      if (Input.atm.n_rs_gas>2)
                                      for (i=0;i<Input.atm.n_rs_gas-1;i++) {
                                        for (j=i+1;j<Input.atm.n_rs_gas;j++)
@@ -469,10 +477,10 @@ radiosonde{SPACE}+{WORD}{WORDS}     {Input.atm.rs_source=RS_FROM_FILE;
 time{WORDS}{FLOATS}                 {ntokens = yytext2ntokens(yytext);
                                      tmpint=0;
                                      s =  yytext2string(yytext,2,ntokens+1);
-                                     if      (strncasecmp(s,"UTC",3) == 0) { Input.time_zone = TIME_UTC; tmpint=1; }
-				     else if (strncasecmp(s,"LAT",3) == 0) { Input.time_zone = TIME_LAT; tmpint=1; }
-                                     else {Input.time_zone = TIME_UTC; tmpint=0;}
-                                     if (Input.time_zone == TIME_UTC) {
+                                     if      (strncasecmp(s,"UTC",3) == 0) { Input.time_zone = TIMEZONE_UTC; tmpint=1; }
+                     else if (strncasecmp(s,"LAT",3) == 0) { Input.time_zone = TIMEZONE_LAT; tmpint=1; }
+                                     else {Input.time_zone = TIMEZONE_UTC; tmpint=0;}
+                                     if (Input.time_zone == TIMEZONE_UTC) {
                                       if (ntokens == 6+tmpint) {
                                         Input.UTC.tm_year  = yytext2int  (yytext, 2+tmpint, ntokens+1) - 1900; /* !!! years after 1900             !!! */
                                         Input.UTC.tm_mon   = yytext2int  (yytext, 3+tmpint, ntokens+1) -    1; /* !!! month after January 0 ... 11 !!! */
@@ -483,10 +491,10 @@ time{WORDS}{FLOATS}                 {ntokens = yytext2ntokens(yytext);
                                       }
                                       else {fprintf(stderr,"Error, wrong number of arguments %d for %s on line %d\n",ntokens, s, line_number+1);
                                             fprintf(stderr,"  Please specify the time with the format: YYYY MM DD HH MM SS.\n");
-				            ierror++;
+                            ierror++;
                                       }
                                      }
-                                     else if (Input.time_zone == TIME_LAT) {
+                                     else if (Input.time_zone == TIMEZONE_LAT) {
                                       if (ntokens == 6+tmpint) {
                                         Input.LAT.tm_year  = yytext2int  (yytext, 2+tmpint, ntokens+1) - 1900; /* !!! years after 1900             !!! */
                                         Input.LAT.tm_mon   = yytext2int  (yytext, 3+tmpint, ntokens+1) -    1; /* !!! month after January 0 ... 11 !!! */
@@ -497,12 +505,12 @@ time{WORDS}{FLOATS}                 {ntokens = yytext2ntokens(yytext);
                                       }
                                       else {fprintf(stderr,"Error, wrong number of arguments %d for %s on line %d\n",ntokens, s, line_number+1);
                                             fprintf(stderr,"  Please specify the time with the format: YYYY MM DD HH MM SS.\n");
-				            ierror++;
+                            ierror++;
                                       }
                                      }
                                      else {
                                       fprintf(stderr,"Error, unknown time zone %d, please report this program bug!\n", Input.time_zone);
-				      ierror++;
+                      ierror++;
                                      }
                                      free(s);
                                     } 
@@ -523,12 +531,12 @@ z_interpolate{WORDS}                {//s = (char *) calloc (strlen(yytext)+1,siz
                                                                                  { Input.atm.z_interpolate = Z_INTERPOLATE_LOGLIN; }
                                        else if (strncasecmp("spline" ,t, 6)==0)  { Input.atm.z_interpolate = Z_INTERPOLATE_SPLINE; }
                                        else {fprintf (stderr, "Error, unknown 'z_interpolate %s' on line %d\n", t, line_number+1);
-				             ierror++;}
+                             ierror++;}
                                        free(t);
                                        break;
                                      case 2:
-				       t =  yytext2string(yytext,2,ntokens+1);
-				       if      (strcmp("O3",t)  ==0 || strcmp("o3",t)  ==0)  mol_id = MOL_O3; 
+                       t =  yytext2string(yytext,2,ntokens+1);
+                       if      (strcmp("O3",t)  ==0 || strcmp("o3",t)  ==0)  mol_id = MOL_O3; 
                                        else if (strcmp("O2",t)  ==0 || strcmp("o2",t)  ==0)  mol_id = MOL_O2; 
                                        else if (strcmp("H2O",t) ==0 || strcmp("h2o",t) ==0)  mol_id = MOL_H2O; 
                                        else if (strcmp("CO2",t) ==0 || strcmp("co2",t) ==0)  mol_id = MOL_CO2; 
@@ -544,7 +552,7 @@ z_interpolate{WORDS}                {//s = (char *) calloc (strlen(yytext)+1,siz
                                        else if (strcmp("N2",t)==0   || strcmp("n2",t)==0)    mol_id = MOL_N2; 
                                        else if (strcmp("T" ,t)==0 || strcmp("t" ,t)==0)  mol_id = -1;
                                        else {fprintf (stderr,"Error, unknown z_interpolate option: %s on line %d\n", t, line_number+1);
-				             ierror++;}
+                             ierror++;}
                                        free(t);  
                                        t =  yytext2string(yytext,3,ntokens+1);
                                        if (mol_id > 0) {
@@ -559,7 +567,7 @@ z_interpolate{WORDS}                {//s = (char *) calloc (strlen(yytext)+1,siz
                                          else if (strcmp("LOG_SPLINE",t)==0 || strcmp("log_spline",t)==0) 
                                            Input.atm.interpol_method_gas[mol_id] = INTERP_METHOD_LOG_SPLINE;
                                          else {fprintf (stderr,"Error, unknown z_interpolate option: %s on line %d\n", t, line_number+1);
-				               ierror++;}
+                               ierror++;}
                                        }
                                        else if (mol_id == -1) {
                                          if      (strcmp("SPLINE",t)==0 || strcmp("spline",t)==0) 
@@ -573,7 +581,7 @@ z_interpolate{WORDS}                {//s = (char *) calloc (strlen(yytext)+1,siz
                                          else if (strcmp("LOG_SPLINE",t)==0 || strcmp("log_spline",t)==0) 
                                            Input.atm.interpol_method_temper = INTERP_METHOD_LOG_SPLINE;
                                          else {fprintf (stderr,"Error, unknown z_interpolate option: %s on line %d\n", t, line_number+1);
-				               ierror++;}
+                               ierror++;}
                                        }
                                        free(t);
                                        break;
@@ -581,33 +589,47 @@ z_interpolate{WORDS}                {//s = (char *) calloc (strlen(yytext)+1,siz
                                        fprintf (stderr,"Error, z_interpolate has wrong number of arguments on line %d.\n", line_number+1);
                                        ierror++;
                                      }
-				    }
+                    }
+
+tzs_cloud_top_height{SIGNED_FLOATS} {
+                                     /* determine input option */
+                     Input.atm.zout_source = OUTLEVEL_ZOUT_ABOVE_SUR;
+                     Input.atm.nzout = yytext2ntokens(yytext);
+                     Input.atm.zout_sur = calloc (Input.atm.nzout,sizeof(float));
+                     for (i=2;i<=Input.atm.nzout+1; i++) {
+                      u = yytext2string(yytext, i, Input.atm.nzout+1);
+                      Input.atm.zout_sur[i-2] = yytext2float(yytext,i,ntokens+1);
+                      free(u);
+                      }
+                       }
+                       
+
 zout{SIGNED_FLOATS_OR_WORDS}|zout_sur{SIGNED_FLOATS_OR_WORDS}|zout_sea{SIGNED_FLOATS_OR_WORDS}  {
                                      /* determine input option */
                                      ntokens = yytext2ntokens(yytext);
                                      s = yytext2string(yytext, 1, ntokens+1);
                                      if      ( strncasecmp("zout"    ,s,4) == 0 && strlen(s) == 4 ) {Input.atm.zout_source = OUTLEVEL_ZOUT_ABOVE_SUR;}
-				     else if ( strncasecmp("zout_sur",s,8) == 0 && strlen(s) == 8 ) {Input.atm.zout_source = OUTLEVEL_ZOUT_ABOVE_SUR;}
+                     else if ( strncasecmp("zout_sur",s,8) == 0 && strlen(s) == 8 ) {Input.atm.zout_source = OUTLEVEL_ZOUT_ABOVE_SUR;}
                                      else if ( strncasecmp("zout_sea",s,8) == 0 && strlen(s) == 8 ) {Input.atm.zout_source = OUTLEVEL_ZOUT_ABOVE_SEA;}
                                      else {fprintf (stderr,"Error, program bug during reading input file: %s on line %d\n", yytext, line_number+1);
-				           ierror++;}
+                           ierror++;}
                                      free(s);
 
                                      /* check for keywords */
                                      t = yytext2string(yytext, 2, ntokens+1);
-				     if      (strncasecmp("atm_levels",  t,10)==0)            {Input.atm.zout_source = OUTLEVEL_ATM_LEVELS;}
-				     else if (strncasecmp("all_levels",  t,10)==0)            {Input.atm.zout_source = OUTLEVEL_ALL_LEVELS;}
-				     else if (strncasecmp("model_levels",t,13)==0)            {Input.atm.zout_source = OUTLEVEL_MODEL_LEVELS;}
-				     else if (strncasecmp("model_layers",t,13)==0)            {Input.atm.zout_source = OUTLEVEL_MODEL_LAYERS;}
-				     else if (strncasecmp("model_levels_and_layers",t,24)==0) {Input.atm.zout_source = OUTLEVEL_MODEL_LEVELS_AND_LAYERS;}
+                     if      (strncasecmp("atm_levels",  t,10)==0)            {Input.atm.zout_source = OUTLEVEL_ATM_LEVELS;}
+                     else if (strncasecmp("all_levels",  t,10)==0)            {Input.atm.zout_source = OUTLEVEL_ALL_LEVELS;}
+                     else if (strncasecmp("model_levels",t,13)==0)            {Input.atm.zout_source = OUTLEVEL_MODEL_LEVELS;}
+                     else if (strncasecmp("model_layers",t,13)==0)            {Input.atm.zout_source = OUTLEVEL_MODEL_LAYERS;}
+                     else if (strncasecmp("model_levels_and_layers",t,24)==0) {Input.atm.zout_source = OUTLEVEL_MODEL_LEVELS_AND_LAYERS;}
                                      else {
                                        Input.atm.nzout = yytext2ntokens(yytext);
                                        if ( Input.atm.zout_source == OUTLEVEL_ZOUT_ABOVE_SUR) {
                                          Input.atm.zout_sur = calloc (Input.atm.nzout,sizeof(float));
                                          for (i=2;i<=Input.atm.nzout+1; i++) {
-				           u = yytext2string(yytext, i, Input.atm.nzout+1);
-				           if      (strncasecmp("toa"         ,u, 3)==0) {Input.atm.zout_sur[i-2] = ZOUT_TOA;}
-				           else if (strncasecmp("sur"         ,u, 3)==0) {Input.atm.zout_sur[i-2] = ZOUT_SURFACE;}
+                           u = yytext2string(yytext, i, Input.atm.nzout+1);
+                           if      (strncasecmp("toa"         ,u, 3)==0) {Input.atm.zout_sur[i-2] = ZOUT_TOA;}
+                           else if (strncasecmp("sur"         ,u, 3)==0) {Input.atm.zout_sur[i-2] = ZOUT_SURFACE;}
                                            else if (strncasecmp("cpt"         ,u, 3)==0) {Input.atm.zout_sur[i-2] = ZOUT_CPT;}
                                            else {Input.atm.zout_sur[i-2] = yytext2float(yytext,i,ntokens+1);}
                                            free(u);
@@ -616,9 +638,9 @@ zout{SIGNED_FLOATS_OR_WORDS}|zout_sur{SIGNED_FLOATS_OR_WORDS}|zout_sea{SIGNED_FL
                                        else if ( Input.atm.zout_source == OUTLEVEL_ZOUT_ABOVE_SEA ) {
                                          Input.atm.zout_sea = calloc (Input.atm.nzout,sizeof(float));
                                          for (i=2;i<=Input.atm.nzout+1; i++) {
-				           u = yytext2string(yytext, i, Input.atm.nzout+1);
-				           if      (strncasecmp("toa"         ,u, 3)==0) {Input.atm.zout_sea[i-2] = ZOUT_TOA;}
-				           else if (strncasecmp("sur"         ,u, 3)==0) {Input.atm.zout_sea[i-2] = ZOUT_SURFACE;}
+                           u = yytext2string(yytext, i, Input.atm.nzout+1);
+                           if      (strncasecmp("toa"         ,u, 3)==0) {Input.atm.zout_sea[i-2] = ZOUT_TOA;}
+                           else if (strncasecmp("sur"         ,u, 3)==0) {Input.atm.zout_sea[i-2] = ZOUT_SURFACE;}
                                            else if (strncasecmp("cpt"         ,u, 3)==0) {Input.atm.zout_sea[i-2] = ZOUT_CPT;}
                                            else {Input.atm.zout_sea[i-2] = yytext2float(yytext,i,ntokens+1);}
                                            free(u);
@@ -635,32 +657,37 @@ zout{SIGNED_FLOATS_OR_WORDS}|zout_sur{SIGNED_FLOATS_OR_WORDS}|zout_sea{SIGNED_FL
                                          Input.atm.zout_source == OUTLEVEL_MODEL_LEVELS_AND_LAYERS) {
                                        if (ntokens != 1 && ntokens != 2) {
                                          fprintf (stderr,"Error, using '%s %s' in line %d accept no further levels!!!\n", s, t, line_number+1);
-				         ierror++;
+                         ierror++;
                                        }
                                        if (ntokens == 2)
                                          Input.atm.nzout = yytext2int(yytext,2+1,ntokens+1);
                                      }
-				    }
+                    }
+
+
+
+ /*aerosol_refrac_index{SPACE_FLOAT}{SPACE_FLOAT}   {fprintf(stderr,"aerosol_refrac_index is obsolete!"); ierror++;} */
+aerosol_refrac_index{SPACE_FLOAT}{SPACE_FLOAT} {
+    Input.aer.spec = 1;
+    Input.aer.re = yytext2float(yytext, 2, 3);
+    Input.aer.im = yytext2float(yytext, 3, 3);
+}
+
+
+
 
   /* OBSOLETE OPTIONS */
  /*aerosol_sizedist_file{SPACE_WORD}   {fprintf(stderr,"aerosol_sizedist_file is obsolete!"); ierror++;}*/
 aerosol_sizedist_file{SPACE_WORD} {
-	Input.aer.spec = 1;
-	yytextCstring ( Input.aer.filename[FN_AER_SIZ], yytext, 2, 2);
+    Input.aer.spec = 1;
+    yytextCstring ( Input.aer.filename[FN_AER_SIZ], yytext, 2, 2);
 }
- /*aerosol_refrac_index{SPACE_FLOAT}{SPACE_FLOAT}   {fprintf(stderr,"aerosol_refrac_index is obsolete!"); ierror++;} */
-aerosol_refrac_index{SPACE_FLOAT}{SPACE_FLOAT} {
-	Input.aer.spec = 1;
-	Input.aer.re = yytext2float(yytext, 2, 3);
-	Input.aer.im = yytext2float(yytext, 3, 3);
-}
-
 
 
 mc_cloud_grid{SPACE_INTEGER}{SPACE_INTEGER}{SPACE_INTEGER} { fprintf (stderr, " ... option mc_cloud_grid is obsolete!\n"); ierror++;}
 profile_layer{SPACE}+{WORD}         {fprintf(stderr,"profile_layer is obsolete!"); ierror++;}
 wc_ipa{SPACE_WORD} {fprintf(stderr,"wc_ipa is obsolete !"); ierror++;}
-wc_layer{SPACE}+{WORD}		    {fprintf(stderr,"wc_layer is obsolete!"); ierror++;}
+wc_layer{SPACE}+{WORD}            {fprintf(stderr,"wc_layer is obsolete!"); ierror++;}
 wc_saturate{SPACE}+{WORD}+{SPACE_FLOAT}* {fprintf(stderr,"wc_saturate obsolete!"); ierror++;}
 ic_layer{SPACE}+{WORD}              {fprintf(stderr,"ic_layer is obsolete!"); ierror++;}
 ic_saturate{SPACE}+{WORD}+{SPACE_FLOAT}* {fprintf(stderr,"ic_saturate obsolete!"); ierror++;}
@@ -669,7 +696,7 @@ mc_momcld_file{SPACE}+{WORD}        {fprintf (stderr, "Error, option mc_momcld_f
 mc_panorama{SIGNED_FLOATS}          {fprintf (stderr, "Error, option mc_panorama does not exist anymore.\n");
                                      fprintf (stderr, "Use mc_panorama_view instead!\n"); exit(-1);}
 mc_pcld_file{SPACE}+{WORD}          {fprintf(stderr,"Error, option 'mc_pcld_file' on line %d is obsolete!\n", line_number+1); ierror++; }
-mc_panorama_vr_sc0 		    {fprintf(stderr,"Error, option 'mc_panorama_vr_sc0' on line %d is obsolete!\n", line_number+1); ierror++; }
+mc_panorama_vr_sc0             {fprintf(stderr,"Error, option 'mc_panorama_vr_sc0' on line %d is obsolete!\n", line_number+1); ierror++; }
 mc_lidar_abserr{SPACE}+{FLOAT}      {fprintf(stderr,"'mc_lidar_abserr on line %d is obsolete option!\n", line_number+1); ierror++;}
 mc_new_delta_scaling {fprintf(stderr,"mc_new_delta_scaling obsolete, use mc_delta_scaling! read documentation for correct usage"); ierror++;}
 mc_relerr{SPACE}+{FLOAT}            {fprintf(stderr,"'mc_relerr on line %d is obsolete option!\n", line_number+1); ierror++;}
@@ -679,7 +706,6 @@ header                              {fprintf(stderr,"header is obsolete!"); ierr
 optimize_fortran{SPACE_INTEGER}*    {fprintf(stderr,"optimize_fortran is obsolete!"); ierror++;}
 time_interpolate{WORDS}             {fprintf(stderr,"time_interpolate is obsolete!"); ierror++;}
 time_interval{SIGNED_FLOATS_OR_WORDS} {fprintf(stderr,"time_interval is obsolete!"); ierror++;}
-
 
 
 {SPACE}+       ;         /* eat up blanks */ 
@@ -694,7 +720,7 @@ time_interval{SIGNED_FLOATS_OR_WORDS} {fprintf(stderr,"time_interval is obsolete
 
 
 <include>[ \t]*      /* eat the whitespace */
-<include>[^ \t\n]+   { /* got the include file name */
+<include>{WORD}   { /* got the include file name */
         if (include_stack_ptr >= MAX_INCLUDE_DEPTH) {
             fprintf (stderr, "Includes nested too deeply");
             exit (1);
@@ -702,12 +728,16 @@ time_interval{SIGNED_FLOATS_OR_WORDS} {fprintf(stderr,"time_interval is obsolete
 
         include_stack[include_stack_ptr++] = YY_CURRENT_BUFFER;
 
-        yyin = fopen(yytext, "r");
+        char *tfname;
+        tfname = yytext2string(yytext, 1, 1);
+        yyin = fopen(tfname, "r");
 
         if (!yyin) {
-            fprintf (stderr, "Error including %s\n", yytext);
+            fprintf (stderr, "Error including %s\n", tfname);
+            free(tfname);
             exit(1);
         }
+    free(tfname);
 
         yy_switch_to_buffer (yy_create_buffer (yyin, YY_BUF_SIZE));
 
@@ -841,6 +871,7 @@ ECMWF_ic_reff Ou
 The default option is Ou.
 }
 
+
 \option{no2_column_du}
 Obsolete, use \code{mol_modify} instead.
 %Set the NO2 column to a given value. The column is integrated between the 
@@ -883,8 +914,8 @@ where \code{YYYY} is the year, \code{MM} the month, \code{DD} the day,
 \code{hh} the hour, \code{mm} the minute, \code{ss} the second in UTC.
 The time information will be used for a couple of things: 
 
-%\code{time} in combination with \code{latitude}, \code{longitude}, and any \code{map}-option
-%is used to select the location where to read the input data.
+\code{time} in combination with \code{latitude}, \code{longitude}, and any \code{map}-option
+is used to select the location where to read the input data.
 
 \code{time} is used to correct extraterrestrial 
 irradiance for the Sun-Earth distance with the day of year. If not given, 
@@ -896,14 +927,14 @@ the solar zenith angle if no \code{sza} is specified.
 \code{time} in combination with \code{latitude} and \code{longitude} is used to choose a
 suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
-%\code{time} in combination with an \code{ECMWF_atmosphere_file} is used to choose
-%a date in the ECMWF input file. 
+\code{time} in combination with an \code{ECMWF_atmosphere_file} is used to choose
+a date in the ECMWF input file. 
 
 %\option{time_interpolate}
 %If a map option is used in combination with \code{time}, the data, which is nearest to the 
 %specified \code{time} is used for the simulation. This means \code{time_interpolate} is switched 
 %off per default.
-%
+
 %If this option is switched on, the data fields stored in the \emph{netCDF} files are interpolated 
 %to the specified \code{time}. (Be aware, that this might cause strange effects for data field 
 %of moving properties. E.g. an interpolated cloud field might have double horizontal extent, 
@@ -936,7 +967,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
   /***************** End of documentation *********************/
 
-  int i=0;
+  int i=0, j=0;
   int brdftype=0;
   int status=0;
   int io=0;
@@ -1018,9 +1049,9 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
   Input.aer.modify = (float **) calloc (MODIFY_VAR_NN, sizeof (float *));
-  for (int i=0; i< MODIFY_VAR_NN; i++) {
+  for (i=0; i< MODIFY_VAR_NN; i++) {
       Input.aer.modify[i] = (float*) calloc (MODIFY_TYPE_NN, sizeof (float));
-      for (int j=0; j< MODIFY_TYPE_NN; j++)	Input.aer.modify[i][j] = NOT_DEFINED_FLOAT;
+      for (j=0; j< MODIFY_TYPE_NN; j++)    Input.aer.modify[i][j] = NOT_DEFINED_FLOAT;
   }
 
 
@@ -1033,13 +1064,13 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.bandwidth         = 1.0;                     /* default: bandwidth in cm-1 (thermal) or 1nm (solar) */
   Input.bandwidth_unit    = UNIT_NOT_DEFINED;        /* cm-1 for thermal, nm for solar */
   Output.print_phi        = 1;                       /* default: print radiances   */
-  Input.source		  = SRC_SOLAR;
-  Input.ck_scheme         = CK_NONE;
+  Input.source          = SRC_SOLAR;
+  Input.ck_scheme         = CK_REPTRAN;
   Input.ck_h2ocont        = 1;                       /* default is h2o-continuum is on, version 2.1 */
 
-  Input.ck_abs 		  = calloc (CK_ABS_NN, sizeof(int));
+  Input.ck_abs           = calloc (CK_ABS_NN, sizeof(int));
   for ( i=0; i<CK_ABS_NN; i++ ) {
-	Input.ck_abs[i]   = SWITCH_ON;
+    Input.ck_abs[i]   = SWITCH_ON;
   }
 
   Input.n_caoth           = 0;
@@ -1056,15 +1087,15 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.crs_model[CRS_MOL_RAYLEIGH] = CRS_MODEL_BODHAINE;
   Input.crs_model[CRS_MOL_O3]       = CRS_MODEL_MOLINA;
   Input.crs_model[CRS_MOL_NO2]      = CRS_MODEL_BURROWS;
-
+  Input.crs_model[CRS_MOL_O4]       = CRS_MODEL_GREENBLATT;
+  
   Input.so2_spectrum      = SO2_BREMEN;
   Input.co2_spectrum      = CO2_YOSHINO;
   Input.o2_spectrum       = O2_DEFAULT;
   Input.bro_spectrum      = BRO_IASB;
   Input.oclo_spectrum     = OCLO_WAHNER;
   Input.hcho_spectrum     = HCHO_IASB;
-  Input.o4_spectrum       = O4_GREENBLATT;
-
+ 
   Input.UTC.tm_year       = NOT_DEFINED_INTEGER;
   Input.UTC.tm_mon        = NOT_DEFINED_INTEGER;
   Input.UTC.tm_mday       = NOT_DEFINED_INTEGER;
@@ -1142,20 +1173,24 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.cm.sal_netCDF_name  = calloc (FILENAME_MAX+1, sizeof(char));
   Input.cm.sal_scale_factor = 1.0;
 
-  Input.ambrals.ambrals = calloc( BRDF_AMBRALS_NN, sizeof(float) );
-  for ( i=0; i<BRDF_AMBRALS_NN; i++) {
-	Input.ambrals.ambrals[i] = NOT_DEFINED_FLOAT;
-  }
-
   Input.cm.param = calloc( BRDF_CAM_NN, sizeof(float) );
   for ( i=0; i<BRDF_CAM_NN; i++) {
-	Input.cm.param[i] = NOT_DEFINED_FLOAT;
+    Input.cm.param[i] = NOT_DEFINED_FLOAT;
   }
   Input.cm.param[BRDF_CAM_UPHI] = 0.0;
 
+  Input.hapke.hapke = calloc( BRDF_HAPKE_NN, sizeof(float) );
+  for ( i=0; i<BRDF_HAPKE_NN; i++) {
+    Input.hapke.hapke[i] = 0.0;
+  }
+  Input.rossli.rossli = calloc( BRDF_ROSSLI_NN, sizeof(float) );
+  for ( i=0; i<BRDF_ROSSLI_NN; i++) {
+    Input.rossli.rossli[i] = 0.0;
+  }
+
   Input.rpv.rpv = calloc( BRDF_RPV_NN, sizeof(float) );
   for ( i=0; i<BRDF_RPV_NN; i++) {
-	Input.rpv.rpv[i] = 0.0;
+    Input.rpv.rpv[i] = 0.0;
   }
   Input.rpv.rpv[BRDF_RPV_SCALE] = 1.0;
 
@@ -1173,9 +1208,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.rte.pol_stokes[3] = 'V';
 
   Input.rte.mc.spherical = calloc ( DIM_NN, sizeof(int) );
+  Input.rte.mc.boxairmass = calloc ( DIM_NN, sizeof(int) );
   Input.rte.mc.ris = calloc ( MC_RIS_NN, sizeof(double) );
   for ( i=0; i<MC_RIS_NN;i++) {
-	Input.rte.mc.ris[i] = 1.0;
+    Input.rte.mc.ris[i] = 0.0;
   }
   Input.rte.mc.abs_unit      = MCABS_UNIT_W_PER_M2_AND_DZ;
   Input.rte.mc.absorption    = MCFORWARD_ABS_NONE;
@@ -1278,10 +1314,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   Input.atm.rs_unit[MOL_N2]   = CM_3;
   Input.atm.rs_add_upper_levels = TRUE;
   Input.atm.mol_mass = calloc(MOL_NN, sizeof(float));
-  Input.atm.mol_mass[MOL_AIR]  = mol_mass_air; /* 28.977  from function ck.c                    in g/MOL */
+  Input.atm.mol_mass[MOL_AIR]  = MOL_MASS_AIR; /* 28.977  from function ck.c                    in g/MOL */
   Input.atm.mol_mass[MOL_O3]   = 48.000;       /*         from function ck.c                    in g/MOL */
   Input.atm.mol_mass[MOL_O2]   = 31.998609;    /* http://www.ch.cam.ac.uk/magnus/MolWeight.html in g/MOL */
-  Input.atm.mol_mass[MOL_H2O]  = mol_mass_wv;  /* 18.015  from function ck.c                    in g/MOL */
+  Input.atm.mol_mass[MOL_H2O]  = MOL_MASS_WV;  /* 18.015  from function ck.c                    in g/MOL */
   Input.atm.mol_mass[MOL_CO2]  = 44.009646;    /* http://www.ch.cam.ac.uk/magnus/MolWeight.html in g/MOL */
   Input.atm.mol_mass[MOL_NO2]  = 46.005333;    /* http://www.ch.cam.ac.uk/magnus/MolWeight.html in g/MOL */
   Input.atm.mol_mass[MOL_BRO]  = 95.902831;    /* http://www.ch.cam.ac.uk/magnus/MolWeight.html in g/MOL */
@@ -1401,14 +1437,14 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
   /* append slash to data_files_path*/
   if (Input.filename[FN_PATH] != NULL) {
-	  if (Input.filename[FN_PATH][strlen(Input.filename[FN_PATH])-1]!= '/')      strcat (Input.filename[FN_PATH], "/");
+      if (Input.filename[FN_PATH][strlen(Input.filename[FN_PATH])-1]!= '/')      strcat (Input.filename[FN_PATH], "/");
   }
 
   /* initialize wavelength end if not specified */
   if ( Input.wl.end < 0 && Input.wl.start > 0 )
-	Input.wl.end = Input.wl.start;
+    Input.wl.end = Input.wl.start;
   if ( Input.wl.end_index < 0 && Input.wl.start_index > 0 )
-	Input.wl.end_index = Input.wl.start_index;
+    Input.wl.end_index = Input.wl.start_index;
 
  /* Reverse order of levels of atm-z-grid */
   if ( Input.atm.nz_atm_forced_sea > 0 ) {
@@ -1419,6 +1455,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     }
   }
 
+  /* Correlated-k is deactivated by 'mol_abs_param crs' */
+  if (strlen(Input.filename[FN_MOL_TAU_ABS])>0)
+    Input.ck_scheme = CK_CRS;
+  
   /* initialization of correlated-k scheme */
   if ( Input.ck_scheme == CK_REPTRAN && Input.ck_reptran_arg != NULL ) {
     if (strncasecmp("fine", Input.ck_reptran_arg,4)==0)         {Input.ck_reptran_option = REPTRAN_OPTION_FINE;}
@@ -1480,37 +1520,47 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   
  /* check crs_model */
   switch (Input.crs_model[CRS_MOL_RAYLEIGH]) {
-	case CRS_MODEL_BODHAINE:
-	case CRS_MODEL_NICOLET:
-	case CRS_MODEL_PENNDORF:
-	case CRS_MODEL_BODHAINE29:
-		break;
-	default:
-		fprintf(stderr, "Unknown 'crs_model' for 'rayleigh'.\nPlease read the documentation for valid crs_models.\n");
-		ierror++;
+    case CRS_MODEL_BODHAINE:
+    case CRS_MODEL_NICOLET:
+    case CRS_MODEL_PENNDORF:
+    case CRS_MODEL_BODHAINE29:
+        break;
+    default:
+        fprintf(stderr, "Unknown 'crs_model' for 'rayleigh'.\nPlease read the documentation for valid crs_models.\n");
+        ierror++;
   }
   switch (Input.crs_model[CRS_MOL_O3]) {
-	case CRS_MODEL_BASS_AND_PAUR:
-	case CRS_MODEL_MOLINA:
-	case CRS_MODEL_DAUMONT:
-	case CRS_MODEL_BOGUMIL:
-		break;
-	default:
-		fprintf(stderr, "Unknown 'crs_model' for 'o3'.\nPlease read the documentation for valid crs_models.\n");
-		ierror++;
+    case CRS_MODEL_BASS_AND_PAUR:
+    case CRS_MODEL_MOLINA:
+    case CRS_MODEL_DAUMONT:
+    case CRS_MODEL_BOGUMIL:
+    case CRS_MODEL_SERDYUCHENKO:
+        break;
+    default:
+        fprintf(stderr, "Unknown 'crs_model' for 'o3'.\nPlease read the documentation for valid crs_models.\n");
+        ierror++;
   }
   switch (Input.crs_model[CRS_MOL_NO2]) {
-	case CRS_MODEL_BOGUMIL:
-	case CRS_MODEL_BURROWS:
-		break;
-	default:
-		fprintf(stderr, "Unknown 'crs_model' for 'no2'.\nPlease read the documentation for valid crs_models.\n");
-		ierror++;
+    case CRS_MODEL_BOGUMIL:
+    case CRS_MODEL_BURROWS:
+    case CRS_MODEL_VANDAELE:
+        break;
+    default:
+        fprintf(stderr, "Unknown 'crs_model' for 'no2'.\nPlease read the documentation for valid crs_models.\n");
+        ierror++;
   }
+  switch (Input.crs_model[CRS_MOL_O4]) {
+    case CRS_MODEL_GREENBLATT:
+    case CRS_MODEL_THALMAN:
+        break;
+    default:
+        fprintf(stderr, "Unknown 'crs_model' for 'no2'.\nPlease read the documentation for valid crs_models.\n");
+        ierror++;
+        }        
 
   /*Calculate latitude and longitude*/
-  if (Input.lat_signum)		Input.latitude  = Input.lat_signum * ( Input.lat_degrees + Input.lat_minutes / 60.0 + Input.lat_seconds / 3600.0 );
-  if (Input.lon_signum)		Input.longitude = Input.lon_signum * ( Input.lon_degrees + Input.lon_minutes / 60.0 + Input.lon_seconds / 3600.0 );
+  if (Input.lat_signum)        Input.latitude  = Input.lat_signum * ( Input.lat_degrees + Input.lat_minutes / 60.0 + Input.lat_seconds / 3600.0 );
+  if (Input.lon_signum)        Input.longitude = Input.lon_signum * ( Input.lon_degrees + Input.lon_minutes / 60.0 + Input.lon_seconds / 3600.0 );
 
   /* initialization for albedo_library option */
   if (Input.alb.library != NULL) {
@@ -1520,7 +1570,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
          yytextCstring (Input.filename[FN_ALBEDO_LIB_PATH],Input.alb.library, 2, 2);
          /* append slash */
          if (Input.filename[FN_ALBEDO_LIB_PATH][strlen(Input.filename[FN_ALBEDO_LIB_PATH])-1]!= '/')
-	     strcat (Input.filename[FN_ALBEDO_LIB_PATH], "/");
+         strcat (Input.filename[FN_ALBEDO_LIB_PATH], "/");
     }
     free(Input.alb.library);
   }
@@ -1536,8 +1586,17 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
      else if (strncasecmp(Input.output_unit_processing,"per_band",11) == 0) Input.output_unit= UNIT_PER_BAND;
      else {fprintf(stderr,"Unknown 'output %s'\n", Input.output_unit_processing);
          ierror++;}
-     if ((Input.processing==PROCESS_SUM) && (Input.ck_scheme==CK_REPTRAN)) Input.output_unit= UNIT_PER_BAND; /* to make summation over band-integrated quantities */
+     if ((Input.processing==PROCESS_SUM) && (Input.ck_scheme==CK_REPTRAN)){
+       if (strlen(Input.filename[FN_EXTRATERRESTRIAL]) == 0)
+         Input.output_unit= UNIT_PER_BAND; /* to make summation over band-integrated quantities */
+       else{
+         fprintf(stderr,"*** Error, using 'output_process sum' in combination with REPTRAN provides\n");
+         fprintf(stderr,"*** accurate results only if no 'source solar/thermal file' is specified.\n");
+         fprintf(stderr,"*** Please use 'output_process integrate' for spectral integrations.\n");
+         ierror++;
+       }
      free(Input.output_unit_processing);
+   }
   }
 
   /* initialization for albedo_library option */
@@ -1548,7 +1607,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
          yytextCstring (Input.filename[FN_RPV_LIB_PATH],yytext, 1+1, ntokens+1);
          /* append slash */
          if (Input.filename[FN_RPV_LIB_PATH][strlen(Input.filename[FN_RPV_LIB_PATH])-1]!= '/')
-	       strcat (Input.filename[FN_RPV_LIB_PATH], "/");
+           strcat (Input.filename[FN_RPV_LIB_PATH], "/");
     }
     free(Input.rpv.library);
   }
@@ -1557,18 +1616,18 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
  #if !HAVE_OPENGL
   if (Input.rte.mc.visualize) {
-	Input.rte.mc.visualize = 0; 
-	fprintf (stderr, "*** Warning, you selected mc_visualize but OpenGL is not available.\n");
-	fprintf (stderr, "*** Ignoring mc_visualize - please install OpenGL if you need it.\n");
+    Input.rte.mc.visualize = 0; 
+    fprintf (stderr, "*** Warning, you selected mc_visualize but OpenGL is not available.\n");
+    fprintf (stderr, "*** Ignoring mc_visualize - please install OpenGL if you need it.\n");
   }
  #endif
 
   /* mc_lidar: check if lidar is available */
   if (Input.source == SRC_LIDAR) {
     #if !HAVE_LIDAR
-	fprintf(stderr,"Error, unknown 'mc_lidar' or 'mc_radar'.\nPlease check your input file and retry!\n");
-	Input.rte.mc.locest = -1;
-	ierror++;
+    fprintf(stderr,"Error, unknown 'mc_lidar' or 'mc_radar'.\nPlease check your input file and retry!\n");
+    Input.rte.mc.locest = -1;
+    ierror++;
     #endif
   }
 
@@ -1576,25 +1635,25 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
   if (Input.rte.mc.backward.yes) {
     if (Input.rte.mc.backward.islower != NOT_DEFINED_INTEGER) {
-	if (Input.rte.mc.backward.jslower == NOT_DEFINED_INTEGER) {
-	  fprintf(stderr,"Error, input option 'mc_backward' need either 0, 2, or 4 integers as arguments!\n");
+    if (Input.rte.mc.backward.jslower == NOT_DEFINED_INTEGER) {
+      fprintf(stderr,"Error, input option 'mc_backward' need either 0, 2, or 4 integers as arguments!\n");
           ierror++; }
-	else {
-	  if (Input.rte.mc.backward.isupper != NOT_DEFINED_INTEGER && Input.rte.mc.backward.jsupper == NOT_DEFINED_INTEGER ) {
-	    fprintf(stderr,"Error, input option 'mc_backward' need either 0, 2, or 4 integers as arguments!\n");
+    else {
+      if (Input.rte.mc.backward.isupper != NOT_DEFINED_INTEGER && Input.rte.mc.backward.jsupper == NOT_DEFINED_INTEGER ) {
+        fprintf(stderr,"Error, input option 'mc_backward' need either 0, 2, or 4 integers as arguments!\n");
             ierror++; }
-	  else if ( Input.rte.mc.backward.isupper == NOT_DEFINED_INTEGER && Input.rte.mc.backward.jsupper == NOT_DEFINED_INTEGER ) {
-		Input.rte.mc.backward.isupper = Input.rte.mc.backward.islower;
-		Input.rte.mc.backward.jsupper = Input.rte.mc.backward.jslower;
-	  }
-	}
+      else if ( Input.rte.mc.backward.isupper == NOT_DEFINED_INTEGER && Input.rte.mc.backward.jsupper == NOT_DEFINED_INTEGER ) {
+        Input.rte.mc.backward.isupper = Input.rte.mc.backward.islower;
+        Input.rte.mc.backward.jsupper = Input.rte.mc.backward.jslower;
+      }
+    }
     }
   }
 
   /* check mc_sample_grid */
   
   if ( Input.rte.mc.dx_sample != 0 && Input.rte.mc.dy_sample == 0 ) {
-	 fprintf(stderr,"Error, input option 'mc_sample_grid' needs either 2 or 4 arguments!\n");
+     fprintf(stderr,"Error, input option 'mc_sample_grid' needs either 2 or 4 arguments!\n");
          ierror++; 
   }
 
@@ -1605,10 +1664,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     case MCBACKWARD_ABS:
     case MCBACKWARD_EMIS:
     case MCBACKWARD_HEAT:
-	Input.rte.mc.backward.absorption = 1;
-	break;
+    Input.rte.mc.backward.absorption = 1;
+    break;
     default:
-	break;
+    break;
   }
 
   /* if uvspec is told to be verbose, it cannot be quiet at the same time */
@@ -1635,28 +1694,36 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   if ( Input.rte.mc.allocate_umu_and_phi == TRUE ) {
     switch ( Input.rte.numu ) {
       case 0:
-	Input.rte.numu   = 1;
-	Input.rte.maxumu = 1;
-	Input.rte.umu    = calloc(1, sizeof(float));
-	break;
+    Input.rte.numu   = 1;
+    Input.rte.maxumu = 1;
+    Input.rte.umu    = calloc(1, sizeof(float));
+    break;
       case 1:
-	break;
+    break;
       default:
-	fprintf (stderr, "It doesn't make sense to define more than one 'umu' with options 'mc_bw_umu_file', 'mc_panorama_view' or 'mc_blitz_position'. Please check you input file again.\n");
-	ierror++;
+    fprintf (stderr, "It doesn't make sense to define more than one 'umu' with options 'mc_bw_umu_file', 'mc_panorama_view' or 'mc_blitz_position'. Please check you input file again.\n");
+    ierror++;
     }
     switch ( Input.rte.nphi ) {
       case 0:
-	Input.rte.nphi   = 1;
-	Input.rte.maxphi = 1;
-	Input.rte.phi    = calloc(1, sizeof(float));
-	break;
+    Input.rte.nphi   = 1;
+    Input.rte.maxphi = 1;
+    Input.rte.phi    = calloc(1, sizeof(float));
+    break;
       case 1:
-	break;
+    break;
       default:
-	fprintf (stderr, "It doesn't make sense to define more than one 'phi' with options 'mc_bw_umu_file', 'mc_panorama_view' or 'mc_blitz_position'. Please check you input file again.\n");
-	ierror++;
+    fprintf (stderr, "It doesn't make sense to define more than one 'phi' with options 'mc_bw_umu_file', 'mc_panorama_view' or 'mc_blitz_position'. Please check you input file again.\n");
+    ierror++;
     }
+  }
+
+  if (Input.rte.fisot == 1) {
+     if ( (Input.rte.solver != SOLVER_DISORT ) && (Input.rte.solver != SOLVER_TWOSTR)) {
+    fprintf(stderr,"Error, 'isotropic_source_toa' may only be used together with \n");
+    fprintf(stderr,"'rte_solver disort' or 'rte_solver twostr'. \n");
+    ierror++;
+     }
   }
 
   /* To calculate radiances, we want to increase nstr to at least 16 */
@@ -1664,31 +1731,31 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     if(Input.rte.solver==SOLVER_POLRADTRAN){ 
       if(!Input.quiet){  
              fprintf (stderr, "*** Warning, you want to calculate radiances with POLRADTRAN. \n");
-	     fprintf (stderr, "*** POLRADTRAN uses only the first NSTR moments of the phase \n");
-	     fprintf (stderr, "*** function which might result in bad accuracy, especially if \n");
-	     fprintf (stderr, "*** the phase function has a strong forward scattering peak. \n");
-	     fprintf (stderr, "*** If you are only interested in the scalar intensity, it is \n");
-	     fprintf (stderr, "*** strongly recommended to use disort. For calculations with \n");
-	     fprintf (stderr, "*** polarization, there is currently no other option, but please \n");
-	     fprintf (stderr, "*** be aware, that the radiances might not be very accurate. \n\n");
-	     fprintf (stderr, " ... setting polradtran parameters:\n");
-	     fprintf (stderr, " ... polradtran_aziorder 4\n");
-	     fprintf (stderr, " ... polradtran_quad_type E\n");
+         fprintf (stderr, "*** POLRADTRAN uses only the first NSTR moments of the phase \n");
+         fprintf (stderr, "*** function which might result in bad accuracy, especially if \n");
+         fprintf (stderr, "*** the phase function has a strong forward scattering peak. \n");
+         fprintf (stderr, "*** If you are only interested in the scalar intensity, it is \n");
+         fprintf (stderr, "*** strongly recommended to use disort. For calculations with \n");
+         fprintf (stderr, "*** polarization, there is currently no other option, but please \n");
+         fprintf (stderr, "*** be aware, that the radiances might not be very accurate. \n\n");
+         fprintf (stderr, " ... setting polradtran parameters:\n");
+         fprintf (stderr, " ... polradtran_aziorder 4\n");
+         fprintf (stderr, " ... polradtran_quad_type E\n");
             } 
        Input.rte.polradtran[POLRADTRAN_AZIORDER]  = 4;
        Input.rte.pol_quad_type = "E";
        if (Input.rte.nstr<8) {
           if(!Input.quiet)
               fprintf (stderr, " ... setting number_of_streams to 8 for radiance calculation!\n");
-	  Input.rte.nstr=8;
+      Input.rte.nstr=8;
         }
        }
      else{
        if (Input.rte.nstr<16) {
           if(!Input.quiet)
              fprintf (stderr, " ... setting number_of_streams to 16 for radiance calculation!\n");
-	  Input.rte.nstr=16;
-	  }
+      Input.rte.nstr=16;
+      }
        }
     }
    
@@ -1715,14 +1782,21 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     fprintf (stderr, "\n");
   }
 
+  /* tzs settings */
+  /* disable scattering for all caoths */
+  if (Input.rte.solver==SOLVER_TZS){
+     ispoff = get_caothoff_index(&Input.caothoff,&Input.n_caothoff, "all");
+     Input.caothoff[ispoff].no_scattering = 1;
+     }
 
   /* defaut zout-level is 0 or -999 for MYSTIC (if no keyword is set) */
   if (Input.atm.nzout == NOT_DEFINED_INTEGER) {
-    if (Input.rte.mc.spectral_is || Input.rte.mc.concentration_is){
-      fprintf(stderr, "Error, calculations with importance sampling ('mc_spectral_is' and 'mc_aerosol_is') require a  \n");
+  /* CE: commented this error, because mc_spectral_is works also with panorama, check when it is needed! */
+  /* if (Input.rte.mc.spectral_is || Input.rte.mc.concentration_is){
+  fprintf(stderr, "Error, calculations with importance sampling ('mc_spectral_is' and 'mc_aerosol_is') require a  \n");
       fprintf(stderr, "       user defined output altitude. Please specify option 'zout'.\n");
       return -1;
-    }  
+      }  */
     switch ( Input.atm.zout_source ) {
     case OUTLEVEL_ZOUT_ABOVE_SUR: 
     case OUTLEVEL_ZOUT_ABOVE_SEA:
@@ -1785,6 +1859,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       case SOLVER_TWOSTR:
       case SOLVER_RODENTS:
       case SOLVER_TWOSTREBE:
+      case SOLVER_TWOMAXRND:
+      case SOLVER_TWOMAXRND3C:
         Input.n_output_user = 5;
         Input.output_user   = calloc (Input.n_output_user, sizeof (int));
         Input.output_user[0] = OUTPUT_USER_WAVE;
@@ -1792,7 +1868,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         Input.output_user[2] = OUTPUT_USER_EDN;
         Input.output_user[3] = OUTPUT_USER_EUP;
         Input.output_user[4] = OUTPUT_USER_U;
-	break;
+    break;
       case SOLVER_FDISORT1:
       case SOLVER_FDISORT2:
       case SOLVER_DISORT:
@@ -1822,7 +1898,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         Input.output_user[2] = OUTPUT_USER_SSLIDAR_RATIO;
         if (Input.sslidar_polarisation)
           Input.output_user[3] = OUTPUT_USER_SSLIDAR_NPHOT_Q;
-	break;
+    break;
       case SOLVER_POLRADTRAN:
         /* polradtran has its special output function, do nothing here */
         break;
@@ -1850,8 +1926,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         case OUTLEVEL_ATM_LEVELS:
         case OUTLEVEL_ALL_LEVELS:
         case OUTLEVEL_MODEL_LEVELS:
-	case OUTLEVEL_MODEL_LAYERS:
-	case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
+    case OUTLEVEL_MODEL_LAYERS:
+    case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
           Input.output_user[1] = OUTPUT_USER_ZOUT_SEA;
           break;
         case OUTLEVEL_PRESS:
@@ -1874,8 +1950,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         case OUTLEVEL_ATM_LEVELS:
         case OUTLEVEL_ALL_LEVELS:
         case OUTLEVEL_MODEL_LEVELS:
-	case OUTLEVEL_MODEL_LAYERS:
-	case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
+    case OUTLEVEL_MODEL_LAYERS:
+    case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
           Input.output_user[0] = OUTPUT_USER_ZOUT_SEA;
           break;
         case OUTLEVEL_PRESS:
@@ -1963,6 +2039,20 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       fprintf (stderr, " ... zout_interpolate is turned on by default for calculations with rte_solver twostrebe\n");
   }
 
+  /* same for twomaxrnd, Bernhard Mayer, Juli 2016 */
+  if (Input.rte.solver == SOLVER_TWOMAXRND && Input.atm.zout_interpolate == NO_ZOUT_INTERPOLATE) {
+    Input.atm.zout_interpolate = ZOUT_INTERPOLATE;
+    if (!Input.quiet)
+      fprintf (stderr, " ... zout_interpolate is turned on by default for calculations with rte_solver twomaxrnd\n");
+  }
+
+  /* same for twomaxrnd3C, Bernhard Mayer, April 2018 */
+  if (Input.rte.solver == SOLVER_TWOMAXRND3C && Input.atm.zout_interpolate == NO_ZOUT_INTERPOLATE) {
+    Input.atm.zout_interpolate = ZOUT_INTERPOLATE;
+    if (!Input.quiet)
+      fprintf (stderr, " ... zout_interpolate is turned on by default for calculations with rte_solver twomaxrnd3C\n");
+  }
+
   /* turn on all zout levels to get range bins for sslidar        */
   /* this is a trick to allocate the memory needed for the output */
   if (Input.rte.solver == SOLVER_SSLIDAR)
@@ -1980,7 +2070,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
   /* copy date to uninitialised UTC structure, if LAT input */
-  if (Input.time_zone == TIME_LAT) {
+  if (Input.time_zone == TIMEZONE_LAT) {
     Input.UTC.tm_year = Input.LAT.tm_year;
     Input.UTC.tm_mon  = Input.LAT.tm_mon;
     Input.UTC.tm_mday = Input.LAT.tm_mday;
@@ -1999,12 +2089,12 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
   /* convert local apperent time to UTC, needs correct day_of_year */
   switch (Input.time_zone) {
-  case TIME_UTC:
+  case TIMEZONE_UTC:
     /* do nothing already UTC */
     /* fprintf (stderr, " *** UTC! ***  year=%4d, month=%2d, day=%2d, hour=%2d, min=%2d, sec=%2d\n", */
     /*                  Input.UTC.tm_year+1900, Input.UTC.tm_mon+1, Input.UTC.tm_mday, Input.UTC.tm_hour, Input.UTC.tm_min, Input.UTC.tm_sec ); */
     break;
-  case TIME_LAT:
+  case TIMEZONE_LAT:
 
     if (Input.verbose) {
       fprintf (stderr, " ... Convert local time to UTC\n"); 
@@ -2082,8 +2172,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
   /* if no atmosphere file is given, check if we can find a appropriate atmosphere */
    if (Input.atmosphere_filename != NULL) { 
-	strcpy (Input.filename[FN_ATMOSPHERE], Input.atmosphere_filename); 
-	free( Input.atmosphere_filename); } 
+    strcpy (Input.filename[FN_ATMOSPHERE], Input.atmosphere_filename); 
+    free( Input.atmosphere_filename); } 
   if (strlen(Input.filename[FN_ATMOSPHERE]) == 0) {
     /* if lat, lon AND time is defined than search suitable atmosphere file */
     if ( ( fabs(Input.latitude  - NOT_DEFINED_FLOAT) > EPSILON ) &&
@@ -2454,7 +2544,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
   /* no user-defined transmittance grid if correlated-k */
-  if (Input.ck_scheme!=CK_NONE && Input.ck_scheme!=CK_LOWTRAN && Input.ck_scheme!=CK_REPTRAN && strlen(Input.filename[FN_WLTRANS])>0) {
+  if (Input.ck_scheme!=CK_CRS && Input.ck_scheme!=CK_LOWTRAN && Input.ck_scheme!=CK_REPTRAN && strlen(Input.filename[FN_WLTRANS])>0) {
     strcpy (Input.filename[FN_WLTRANS], "");
     fprintf (stderr, " ... option wavelength_grid_file ignored\n");
     fprintf (stderr, " ... (does not make sense with mol_abs_param)\n");
@@ -2495,6 +2585,13 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     strcpy (Input.filename[FN_RPV_LIB_PATH], Input.filename[FN_PATH]);
     strcat (Input.filename[FN_RPV_LIB_PATH], "albedo/IGBP_rpv_polder/");
 
+  }
+
+  /* check if both mc_albedo_spectral_file and mc_albedo_type were defined */
+  if ((strlen(Input.rte.mc.filename[FN_MC_ALBEDO_TYPE])>0  && strlen(Input.rte.mc.filename[FN_MC_ALBEDO_SPECTRAL])==0) ||
+      (strlen(Input.rte.mc.filename[FN_MC_ALBEDO_TYPE])==0 && strlen(Input.rte.mc.filename[FN_MC_ALBEDO_SPECTRAL])>0)) {
+    fprintf (stderr, "Error, you need to define both mc_albedo_spectral_file and mc_albedo_type if you want 2D RPV\n");
+    return status;
   }
 
   /* set default ALTITUDE map */
@@ -2587,64 +2684,77 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
   int caoth_error=caoth_set(&Input,&Output);
   if (caoth_error != 0) {
-	fprintf (stderr, "%d error(s) in caoth settings.\nPlease check uvspec input-file again.\n", abs(caoth_error));
-	ierror++;
+    fprintf (stderr, "%d error(s) in caoth settings.\nPlease check uvspec input-file again.\n", abs(caoth_error));
+    ierror++;
   }
 
   /* Check if modify for aerosol. ic, wc, and profile are set correctly */
 
   if ( Input.aer.modify[MODIFY_VAR_GG][MODIFY_TYPE_SCALE] != NOT_DEFINED_FLOAT || Input.aer.modify[MODIFY_VAR_TAU550][MODIFY_TYPE_SCALE] != NOT_DEFINED_FLOAT ) {
-	fprintf ( stderr, "Error 'aerosol_modify gg scale' and 'aerosol_modify tau550 scale' are not yet implemented.\n" ) ;
-	ierror++;
+    fprintf ( stderr, "Error 'aerosol_modify gg scale' and 'aerosol_modify tau550 scale' are not yet implemented.\n" ) ;
+    ierror++;
   }
   for ( isp = 0; isp < Input.n_caoth; isp ++ ) {
-	if ( Input.caoth[isp].modify[MODIFY_VAR_TAU550][MODIFY_TYPE_SCALE] != NOT_DEFINED_FLOAT ) {
-		fprintf ( stderr, "Error '%s_modify tau550 scale' and 'profile_modify %s tau550 scale' are not yet implemented.\n", Input.caoth[isp].name, Input.caoth[isp].name ) ;
-		ierror++;
-	}
-/*	if ( Input.caoth[isp].modify[MODIFY_VAR_TAU][MODIFY_TYPE_SCALE] != NOT_DEFINED_FLOAT ) {
-	   if ( strcasecmp ( Input.caoth[isp].name, "wc" ) != 0 || strcasecmp ( Input.caoth[isp].name, "ic" ) != 0 ) {
-		fprintf ( stderr, "Error 'profile_modify %s tau scale' is not yet implemented.\n", Input.caoth[isp].name ) ;
-		ierror++;
-	   }
-	}*/
+    if ( Input.caoth[isp].modify[MODIFY_VAR_TAU550][MODIFY_TYPE_SCALE] != NOT_DEFINED_FLOAT ) {
+        fprintf ( stderr, "Error '%s_modify tau550 scale' and 'profile_modify %s tau550 scale' are not yet implemented.\n", Input.caoth[isp].name, Input.caoth[isp].name ) ;
+        ierror++;
+    }
+/*    if ( Input.caoth[isp].modify[MODIFY_VAR_TAU][MODIFY_TYPE_SCALE] != NOT_DEFINED_FLOAT ) {
+       if ( strcasecmp ( Input.caoth[isp].name, "wc" ) != 0 || strcasecmp ( Input.caoth[isp].name, "ic" ) != 0 ) {
+        fprintf ( stderr, "Error 'profile_modify %s tau scale' is not yet implemented.\n", Input.caoth[isp].name ) ;
+        ierror++;
+       }
+    }*/
   }
 
   /* Check if no_absorption and no_scattering is set correctly */
   for (ispoff = 0; ispoff < Input.n_caothoff; ispoff ++ ) {
-	if  (Input.caothoff[ispoff].no_absorption == 1) {
-		if (strcasecmp ( Input.caothoff[ispoff].name, "all") == 0 ) { 
-			Input.absorption = 0;
-			Input.molabs = MOLABS_NONE;
-		}
-		else if (strcasecmp ( Input.caothoff[ispoff].name, "mol") == 0 ) Input.molabs = MOLABS_NONE;
-		else {
-        		fprintf (stderr, "Error 'no_absorption %s' not yet implemented.' \n", Input.caothoff[ispoff].name );
-			ierror++;
-		}
-	}
-	if (Input.caothoff[ispoff].no_scattering == 1) {
-		if (strcasecmp ( Input.caothoff[ispoff].name, "all") == 0 ) {
-		        Input.scattering = 0;
-		        Input.rayleigh = RAYLEIGH_NONE;
+    if  (Input.caothoff[ispoff].no_absorption == 1) {
+        if (strcasecmp ( Input.caothoff[ispoff].name, "all") == 0 ) { 
+            Input.absorption = 0;
+            Input.molabs = MOLABS_NONE;
+        }
+        else if (strcasecmp ( Input.caothoff[ispoff].name, "mol") == 0 ) Input.molabs = MOLABS_NONE;
+        else {
+               int found_caoth=0;
+               for (isp=0; isp<Input.n_caoth; isp++) {
+                if ( strcasecmp ( Input.caothoff[ispoff].name, Input.caoth[isp].name) == 0 ) {
+                Input.caoth[isp].no_absorption = TRUE;
+                found_caoth=1;
+                break;
                 }
-		else if (strcasecmp ( Input.caothoff[ispoff].name, "mol") == 0 ) Input.rayleigh = RAYLEIGH_NONE;
-		else if (strcasecmp ( Input.caothoff[ispoff].name, "aer") == 0 ) Input.aer.no_scattering = TRUE;
-		else {
-			int found_caoth=0;
-			for (isp=0; isp<Input.n_caoth; isp++) {
-				if ( strcasecmp ( Input.caothoff[ispoff].name, Input.caoth[isp].name) == 0 ) {
-					Input.caoth[isp].no_scattering = TRUE;
-					found_caoth=1;
-					break;
-				}
-			}
-			if (!found_caoth) {
-		        	fprintf (stderr, "Error 'no_scattering %s' not yet implemented.' \n", Input.caothoff[ispoff].name );
-				ierror++;
-			}
-		}
-	}
+            }
+            if (!found_caoth) {
+            fprintf (stderr, "Error 'no_absorption %s' not yet implemented.' \n", Input.caothoff[ispoff].name );
+            
+            
+            /*    fprintf (stderr, "Error 'no_absorption %s' not yet implemented.' \n", Input.caothoff[ispoff].name ); */
+            ierror++;
+            }
+        }
+    }
+    if (Input.caothoff[ispoff].no_scattering == 1) {
+        if (strcasecmp ( Input.caothoff[ispoff].name, "all") == 0 ) {
+                Input.scattering = 0;
+                Input.rayleigh = RAYLEIGH_NONE;
+                }
+        else if (strcasecmp ( Input.caothoff[ispoff].name, "mol") == 0 ) Input.rayleigh = RAYLEIGH_NONE;
+        else if (strcasecmp ( Input.caothoff[ispoff].name, "aer") == 0 ) Input.aer.no_scattering = TRUE;
+        else {
+            int found_caoth=0;
+            for (isp=0; isp<Input.n_caoth; isp++) {
+                if ( strcasecmp ( Input.caothoff[ispoff].name, Input.caoth[isp].name) == 0 ) {
+                    Input.caoth[isp].no_scattering = TRUE;
+                    found_caoth=1;
+                    break;
+                }
+            }
+            if (!found_caoth) {
+                    fprintf (stderr, "Error 'no_scattering %s' not yet implemented.' \n", Input.caothoff[ispoff].name );
+                ierror++;
+            }
+        }
+    }
   }
 
   if (ierror!=0)  {
@@ -2668,6 +2778,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       case CK_KATO:
       case CK_KATO2:
       case CK_KATO2_96:
+      case CK_KATO2ANDWANDJI:
       case CK_FU:
       case CK_AVHRR_KRATZ:
 
@@ -2681,28 +2792,29 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
             fprintf (stderr, "* optional argument 'interpolate' from the 'wc_properties' uvspec input.\n");
             fprintf (stderr, "* Note that this only happens if you are using disort_intcor moments.\n");
             fprintf (stderr, "* In such case, the old Mie files specifically create for the kato/fu/kratz bands\n");
-  	  fprintf (stderr, "* is being used. In case of using disort_intcor phases (default), the\n");
-  	  fprintf (stderr, "* new Mie files are being used, and interpolation is performed.\n");
+        fprintf (stderr, "* is being used. In case of using disort_intcor phases (default), the\n");
+        fprintf (stderr, "* new Mie files are being used, and interpolation is performed.\n");
             return -1;
           }
      
           strcpy (Input.caoth[isp].properties_filename, Input.filename[FN_PATH]);
-	  switch (Input.ck_scheme) {
-	      case CK_KATO:
-	      case CK_KATO2:
-	      case CK_KATO2_96:
-		strcat (Input.caoth[isp].properties_filename, "/correlated_k/kato/");
-		if (Input.verbose)	fprintf(stderr, "... using old mie files specifically created for kato bands\n");
-		break;
-	      case CK_FU:
-		strcat (Input.caoth[isp].properties_filename, "/correlated_k/fu/");
-		if (Input.verbose)	fprintf(stderr, "... using old mie files specifically created for Fu bands\n");
-		break;
-	      case CK_AVHRR_KRATZ:
-		strcat (Input.caoth[isp].properties_filename, "/correlated_k/kratz/");
-          	if (Input.verbose)	fprintf(stderr, "... using old mie files specifically created for kratz bands\n");
-		break;
-	  }
+      switch (Input.ck_scheme) {
+          case CK_KATO:
+          case CK_KATO2:
+          case CK_KATO2_96:
+          case CK_KATO2ANDWANDJI:
+        strcat (Input.caoth[isp].properties_filename, "/correlated_k/kato/");
+        if (Input.verbose)    fprintf(stderr, "... using old mie files specifically created for kato bands\n");
+        break;
+          case CK_FU:
+        strcat (Input.caoth[isp].properties_filename, "/correlated_k/fu/");
+        if (Input.verbose)    fprintf(stderr, "... using old mie files specifically created for Fu bands\n");
+        break;
+          case CK_AVHRR_KRATZ:
+        strcat (Input.caoth[isp].properties_filename, "/correlated_k/kratz/");
+              if (Input.verbose)    fprintf(stderr, "... using old mie files specifically created for kratz bands\n");
+        break;
+      }
           strcat (Input.caoth[isp].properties_filename, "wc.");
         }
         else {
@@ -2711,24 +2823,25 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
           strcat (Input.caoth[isp].properties_filename, "wc.");
           Input.caoth[isp].interpolate=1; 
           if (Input.verbose) {
-	    switch (Input.ck_scheme) {
-	      case CK_KATO:
+        switch (Input.ck_scheme) {
+          case CK_KATO:
               case CK_KATO2:
               case CK_KATO2_96:
-		fprintf(stderr, "... interpolate optical properties to central wavelengths of kato bands\n");
-		break;
-	      case CK_FU:
-		fprintf(stderr, "... interpolate optical properties to central wavelengths of fu bands\n");
-		break;
-	      case CK_AVHRR_KRATZ:
-		fprintf(stderr, "... interpolate optical properties to central wavelengths of kratz bands\n");
-		break;
-	    }
-	  }
-	}
-        break;	    
+          case CK_KATO2ANDWANDJI:
+        fprintf(stderr, "... interpolate optical properties to central wavelengths of kato bands\n");
+        break;
+          case CK_FU:
+        fprintf(stderr, "... interpolate optical properties to central wavelengths of fu bands\n");
+        break;
+          case CK_AVHRR_KRATZ:
+        fprintf(stderr, "... interpolate optical properties to central wavelengths of kratz bands\n");
+        break;
+        }
+      }
+    }
+        break;        
   
-      case CK_NONE:
+      case CK_CRS:
       case CK_RAMAN:
       case CK_LOWTRAN:
       case CK_REPTRAN:
@@ -2736,11 +2849,11 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         if (!Input.caoth[isp].interpolate)  {
           fprintf (stderr, "* 'wc_properties mie' for a spectral calculation requires that the\n");
           fprintf (stderr, "* cloud optical properties are interpolated to the internal wavelength\n");
-  	fprintf (stderr, "* grid. Depending on the number of grid points this may require huge\n");
-  	fprintf (stderr, "* amounts of memory and some additional computational time. To use this\n");
-  	fprintf (stderr, "* option, please specify explicitely 'wc_properties mie interpolate'\n");
-  	fprintf (stderr, "* in the uvspec input!\n");
-  	return -1;
+      fprintf (stderr, "* grid. Depending on the number of grid points this may require huge\n");
+      fprintf (stderr, "* amounts of memory and some additional computational time. To use this\n");
+      fprintf (stderr, "* option, please specify explicitely 'wc_properties mie interpolate'\n");
+      fprintf (stderr, "* in the uvspec input!\n");
+      return -1;
         }
         else {
           strcpy (Input.caoth[isp].properties_filename, Input.filename[FN_PATH]);
@@ -2767,7 +2880,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       case CK_KATO:
       case CK_KATO2:
       case CK_KATO2_96:
-      case CK_FU:	 
+      case CK_KATO2ANDWANDJI:
+      case CK_FU:     
       case CK_AVHRR_KRATZ:
         if (Input.rte.disort_icm == DISORT_ICM_PHASE) {
           fprintf(stderr, "* ic_properties mie for mol_abs_param kato/fu/avhrr_kratz are not implemented for the disort_intcor phase.\n");
@@ -2777,30 +2891,31 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         if (Input.caoth[isp].interpolate)  {
           fprintf (stderr, "* It does not make sense to use \"ic_properties mie interpolate\"\n");
           fprintf (stderr, "* for \"mol_abs_param KATO/FU/AVHRR_KRATZ\" because\n");
-  	  fprintf (stderr, "* in the latter case the cloud properties are pre-calculated\n");
+        fprintf (stderr, "* in the latter case the cloud properties are pre-calculated\n");
           fprintf (stderr, "* for the required wavelength and interpolation is not useful.\n");
-  	  fprintf (stderr, "* Please remove 'interpolate' from the 'ic_properties' uvspec input.\n");
-  	  return -1;
+        fprintf (stderr, "* Please remove 'interpolate' from the 'ic_properties' uvspec input.\n");
+        return -1;
         }
   
         strcpy (Input.caoth[isp].properties_filename, Input.filename[FN_PATH]);
-	switch (Input.ck_scheme) {
-	  case CK_KATO:
-	  case CK_KATO2:
-	  case CK_KATO2_96:
-		strcat (Input.caoth[isp].properties_filename, "/correlated_k/kato/");
-		break;
+    switch (Input.ck_scheme) {
+      case CK_KATO:
+      case CK_KATO2:
+      case CK_KATO2_96:
+      case CK_KATO2ANDWANDJI:
+        strcat (Input.caoth[isp].properties_filename, "/correlated_k/kato/");
+        break;
           case CK_FU:
-        	strcat (Input.caoth[isp].properties_filename, "/correlated_k/fu/");
-		break;
-	  case CK_AVHRR_KRATZ:
-        	strcat (Input.caoth[isp].properties_filename, "/correlated_k/kratz/");
-		break;
-	}
+            strcat (Input.caoth[isp].properties_filename, "/correlated_k/fu/");
+        break;
+      case CK_AVHRR_KRATZ:
+            strcat (Input.caoth[isp].properties_filename, "/correlated_k/kratz/");
+        break;
+    }
         strcat (Input.caoth[isp].properties_filename, "ic.");
-        break;	    
-  		    
-      case CK_NONE:
+        break;        
+              
+      case CK_CRS:
       case CK_RAMAN:
       case CK_LOWTRAN:
       case CK_REPTRAN:
@@ -2808,11 +2923,11 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         if (!Input.caoth[isp].interpolate)  {
           fprintf (stderr, "* 'ic_properties mie' for a spectral calculation requires that the\n");
           fprintf (stderr, "* cloud optical properties are interpolated to the internal wavelength\n");
-	  fprintf (stderr, "* grid. Depending on the number of grid points this may require huge\n");
-  	  fprintf (stderr, "* amounts of memory and some additional computational time. To use this\n");
-  	  fprintf (stderr, "* option, please specify explicitely 'ic_properties mie interpolate'\n");
-  	  fprintf (stderr, "* in the uvspec input!\n");
-  	  return -1;
+      fprintf (stderr, "* grid. Depending on the number of grid points this may require huge\n");
+        fprintf (stderr, "* amounts of memory and some additional computational time. To use this\n");
+        fprintf (stderr, "* option, please specify explicitely 'ic_properties mie interpolate'\n");
+        fprintf (stderr, "* in the uvspec input!\n");
+        return -1;
         }
         else {
           strcpy (Input.caoth[isp].properties_filename, Input.filename[FN_PATH]);
@@ -2833,7 +2948,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   
       if (!Input.quiet)
          fprintf (stderr, " ... reading ice cloud optical properties from %s*\n", 
-  	        Input.caoth[isp].properties_filename);
+              Input.caoth[isp].properties_filename);
       break;
   
     case PROP_BAUM:
@@ -2865,7 +2980,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   
       if (!Input.quiet)
          fprintf (stderr, " ... reading ice cloud optical properties from %s*\n", 
-  	        Input.caoth[isp].properties_filename);
+              Input.caoth[isp].properties_filename);
 
       break;
       case PROP_BAUM_V36:
@@ -2916,7 +3031,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   
       if (!Input.quiet)
         fprintf (stderr, " ... reading ice cloud optical properties from %s*\n", 
-			 Input.caoth[isp].properties_filename);
+             Input.caoth[isp].properties_filename);
       break;
       case PROP_HEY:
       /* HEY ice cloud properties */ 
@@ -2954,7 +3069,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
         break;
       case IC_HABIT_ROSETTE_6:
         strcat(Input.caoth[isp].properties_filename, "ros");
-        break;	
+        break;    
       case IC_HABIT_PLATE:
         strcat(Input.caoth[isp].properties_filename, "pla");
         break;
@@ -2976,7 +3091,85 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   
       if (!Input.quiet)
         fprintf (stderr, " ... reading ice cloud optical properties from %s*\n", 
-			 Input.caoth[isp].properties_filename);
+             Input.caoth[isp].properties_filename);
+      break;
+      
+      case PROP_YANG2013:
+      /* HEY ice cloud properties */ 
+  
+      if (!Input.caoth[isp].interpolate)  {
+        fprintf (stderr, "* 'ic_properties yang2013' for a spectral calculation requires that the\n");
+        fprintf (stderr, "* cloud optical properties are interpolated to the internal wavelength\n");
+        fprintf (stderr, "* grid. Depending on the number of grid points this may require huge\n");
+        fprintf (stderr, "* amounts of memory and some additional computational time. To use this\n");
+        fprintf (stderr, "* option, please specify explicitely 'ic_properties hey interpolate'\n");
+        fprintf (stderr, "* in the uvspec input!\n");
+        
+        return -1;
+      }
+      else if(Input.wl.start < 200 &&  Input.wl.end > 99000){
+        fprintf(stderr,"* 'ic_properties hey' is available in the\n");
+        fprintf(stderr,"* wavelength range from 0.2 to 99 micrometers. \n");
+        return -1;
+      }
+      else {
+        strcpy (Input.caoth[isp].properties_filename, Input.filename[FN_PATH]);
+        strcat (Input.caoth[isp].properties_filename, "ic/yang2013/");
+        strcat (Input.caoth[isp].properties_filename, "ic.");
+      }
+  
+      switch(Input.caoth[isp].habit){
+      case IC_HABIT_COLUMN_8ELEMENTS:
+        strcat(Input.caoth[isp].properties_filename, "column_8elements");
+        break;
+      case IC_HABIT_DROXTAL:
+        strcat(Input.caoth[isp].properties_filename, "droxtal");
+        break;
+      case IC_HABIT_HOLLOW_BULLET_ROSETTE:
+        strcat(Input.caoth[isp].properties_filename, "hollow_bullet_rosette");
+        break;
+      case IC_HABIT_HOLLOW_COLUMN:
+        strcat(Input.caoth[isp].properties_filename, "hollow_column");
+        break;    
+      case IC_HABIT_PLATE:
+        strcat(Input.caoth[isp].properties_filename, "plate");
+        break;
+      case IC_HABIT_PLATE_10ELEMENTS:
+        strcat(Input.caoth[isp].properties_filename, "plate_10elements");
+        break;
+      case IC_HABIT_PLATE_5ELEMENTS:
+        strcat(Input.caoth[isp].properties_filename, "plate_5elements");
+        break;
+      case IC_HABIT_SOLID_BULLET_ROSETTE:
+        strcat(Input.caoth[isp].properties_filename, "solid_bullet_rosette");
+        break;
+      case IC_HABIT_SOLID_COLUMN:
+         strcat(Input.caoth[isp].properties_filename, "solid_column");
+        break; 
+      default: 
+          fprintf (stderr, "Error, unknown ice particle habit. \n"); 
+          return -1; 
+      }
+
+      switch(Input.caoth[isp].roughness){
+      case IC_ROUGHNESS_SMOOTH:
+        strcat(Input.caoth[isp].properties_filename, ".000");
+        break;
+      case IC_ROUGHNESS_MODERATE:
+        strcat(Input.caoth[isp].properties_filename, ".003");
+        break;
+      case IC_ROUGHNESS_SEVERE:
+        strcat(Input.caoth[isp].properties_filename, ".050");
+        break;
+      default:
+        fprintf (stderr, "Error, unknown ice particle roughness. \n"); 
+          return -1; 
+      }
+      
+
+      if (!Input.quiet)
+        fprintf (stderr, " ... reading ice cloud optical properties from %s*\n", 
+             Input.caoth[isp].properties_filename);
       break;
       
    default:
@@ -3020,7 +3213,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 
 
   /* 2D RPV */
-  if (strlen(Input.rte.mc.filename[FN_MC_RPV])>0)  {
+  if (strlen(Input.rte.mc.filename[FN_MC_RPV2D_TYPE])>0)  {
     brdftype++;
 
     if (!Input.quiet)
@@ -3028,11 +3221,26 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
 
-  /* check if both rpv_file and rpv_type were defined */
-  if ((strlen(Input.rte.mc.filename[FN_MC_RPV])>0  && strlen(Input.rte.mc.filename[FN_MC_RPVTYPE])==0) ||
-      (strlen(Input.rte.mc.filename[FN_MC_RPV])==0 && strlen(Input.rte.mc.filename[FN_MC_RPVTYPE])>0)) {
-    fprintf (stderr, "Error, you need to define both mc_rpv_file and mc_rpv_type if you want 2D RPV\n");
-    status--;
+  /* check if both brdf_rpv_file and rpv_type were defined */
+  if ((strlen(Input.rte.mc.filename[FN_MC_RPV2D_TYPE])>0  && strlen(Input.rte.mc.filename[FN_MC_RPV_SPECTRAL])==0) ||
+      (strlen(Input.rte.mc.filename[FN_MC_RPV2D_TYPE])==0 && strlen(Input.rte.mc.filename[FN_MC_RPV_SPECTRAL])>0)) {
+    fprintf (stderr, "Error, you need to define both mc_rpv_spectral_file and mc_rpv_type if you want 2D RPV\n");
+    return -1;
+  }
+
+  /* check if both brdf_ambrals_file and ambrals_type were defined */
+  if ((strlen(Input.rte.mc.filename[FN_MC_AMBRALS_TYPE])>0  && strlen(Input.rte.mc.filename[FN_MC_AMBRALS_SPECTRAL])==0) ||
+      (strlen(Input.rte.mc.filename[FN_MC_AMBRALS_TYPE])==0 && strlen(Input.rte.mc.filename[FN_MC_AMBRALS_SPECTRAL])>0)) {
+    fprintf (stderr, "Error, you need to define both mc_ambrals_spectral_file and mc_ambrals_type if you want 2D AMBRALS\n");
+    return -1;
+  }
+
+  /* mc_rpv_file not yet implemented */
+  if (strlen(Input.rte.mc.filename[FN_MC_RPV])>0) {
+    fprintf (stderr, "Error, monochromatic RPV file not yet implemented;\n");
+    fprintf (stderr, "ATTENTION: The option mc_rpv_file has been renamed mc_rpv_spectral_file.\n");
+    fprintf (stderr, "Please use the latter when you need a 2D spectral RPV!\n");
+    return -1;
   }
 
   
@@ -3055,8 +3263,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     if (Input.cm.param[BRDF_CAM_U10]<0)  {
       if (strlen(Input.filename[FN_U10_MAP])==0) {
         fprintf (stderr, "Error setting up Cox and Munk ocean BRDF: At least a wind speed brdf_cam u10\n");
-	fprintf (stderr, "is required. Please define or switch off ocean BRDF!\n");
-	return -1;
+    fprintf (stderr, "is required. Please define or switch off ocean BRDF!\n");
+    return -1;
       }
       else {
         /* read wind speed from netCDF wind map */
@@ -3183,31 +3391,40 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       Input.rte.nstr=16;
     }
   }
+  
+  /******************************************/
+  /* Third, Hapke BRDF                      */
+  /******************************************/
 
+  /* wavelength-(in)dependent BRDF */
+  if (Input.hapke.hapke[BRDF_HAPKE_B0]!=0 || Input.hapke.hapke[BRDF_HAPKE_H]!=0 || Input.hapke.hapke[BRDF_HAPKE_W]!=0|| strlen(Input.filename[FN_HAPKE])>0) {
+    brdftype++;
+    Input.disort2_brdf = BRDF_HAPKE;
+
+    if (!Input.quiet)
+      fprintf (stderr, " ... using Hapke parameterization of the BRDF\n");
+  }
 
   /******************************************/
-  /* Third, AMBRALS                         */
+  /* Fourth, Ross-Li BRDF                   */
   /******************************************/
 
-  if (Input.ambrals.ambrals[BRDF_AMBRALS_ISO] >= 0 || Input.ambrals.ambrals[BRDF_AMBRALS_VOL] >= 0 || Input.ambrals.ambrals[BRDF_AMBRALS_GEO] >= 0) {
+  /* wavelength-(in)dependent BRDF */
+  if (Input.rossli.rossli[BRDF_ROSSLI_ISO]!=0 || Input.rossli.rossli[BRDF_ROSSLI_VOL]!=0 || Input.rossli.rossli[BRDF_ROSSLI_GEO]!=0 || strlen(Input.filename[FN_ROSSLI])>0) {
+    brdftype++;
+    Input.disort2_brdf = BRDF_ROSSLI;
+
+    if (!Input.quiet)
+      fprintf (stderr, " ... using Ross-Li parameterization of the BRDF\n");
+  }
+
+  /* 2D RossLi */
+  if (strlen(Input.rte.mc.filename[FN_MC_ROSSLI])>0)  {
     brdftype++;
 
-    Input.disort2_brdf = BRDF_AMB;
-    
-    fprintf (stderr, " ... AMBRALS BRDF (disort, fdisort2 and MYSTIC only!)\n");
-    fprintf (stderr, " ... iso = %f, vol = %f, geo = %f\n", Input.ambrals.ambrals[BRDF_AMBRALS_ISO], Input.ambrals.ambrals[BRDF_AMBRALS_VOL], Input.ambrals.ambrals[BRDF_AMBRALS_GEO]);
+    if (!Input.quiet)
+      fprintf (stderr, " ... using 2D RossLi parameterization of the BRDF (MYSTIC only!)\n");
   }
-
-  
-  /* Check if only one or more BRDF types have been defined */
-  /* but allow 2D RPV in combination with Cox and Munk      */
-  if (brdftype > 1 && !(Input.disort2_brdf==BRDF_CAM && strlen(Input.rte.mc.filename[FN_MC_RPV])))  {
-    fprintf (stderr, "Error, it does not make sense to define more than one BRDF type!\n");
-    return -1;
-  }
-
-
-
 
   /**********************************************/
   /* Tsang BPDF                                 */
@@ -3226,6 +3443,12 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
      }
   }   
        
+  /* Check if only one or more BRDF types have been defined */
+  /* but allow 2D RPV or RossLi in combination with Cox and Munk */
+  if (brdftype > 1 && !(Input.disort2_brdf==BRDF_CAM && (strlen(Input.rte.mc.filename[FN_MC_ROSSLI])||strlen(Input.rte.mc.filename[FN_MC_RPV2D_TYPE]))))  {
+    fprintf (stderr, "Error, it does not make sense to define more than one BRDF type!\n");
+    return -1;
+  }
   
   /* Number of phase function moments equals the number of streams  */
   /* per default, but may be changed later in the code;             */
@@ -3255,6 +3478,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   case SOLVER_NULL:
   case SOLVER_RODENTS:
   case SOLVER_TWOSTREBE:
+  case SOLVER_TWOMAXRND:
+  case SOLVER_TWOMAXRND3C:
   case SOLVER_TWOSTR:
   case SOLVER_SSLIDAR:
     break;
@@ -3280,7 +3505,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       break;
     case SOLVER_POLRADTRAN:
       if (Input.rte.polradtran[POLRADTRAN_AZIORDER] == 0) 
-	Input.rte.nphi = 0;
+    Input.rte.nphi = 0;
       break; 
     case SOLVER_FTWOSTR:
     case SOLVER_SOS:
@@ -3291,6 +3516,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     case SOLVER_NULL:
     case SOLVER_RODENTS:
     case SOLVER_TWOSTREBE:
+    case SOLVER_TWOMAXRND:
+    case SOLVER_TWOMAXRND3C:
     case SOLVER_TWOSTR:
     case SOLVER_SSLIDAR:
       break;
@@ -3303,7 +3530,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
 /*aky  if ( Input.rte.solver == SOLVER_SOS ) {
         fprintf (stderr, "Successive order of scattering code not yet in production.\n");
         fprintf (stderr, "Please change to another solver.\n");
-	return -1;
+    return -1;
   }aky*/
   if ( Input.flu.source >= 0 ) {
     Input.calibration = OUTCAL_TRANSMITTANCE; /* For fluorescence fbeam is its real value and not 1.0 */
@@ -3353,7 +3580,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     Input.rte.cmuind = (int *) calloc (Input.rte.nstr, sizeof(int));
     Input.rte.umuind = (int *) calloc (Input.rte.numu, sizeof(int));
     Input.rte.umu    = add_cmu_to_umu(Input.rte.nstr, Input.rte.numu, Input.rte.maxumu, 
-				      Input.rte.umu, Input.rte.cmuind, Input.rte.umuind);
+                      Input.rte.umu, Input.rte.cmuind, Input.rte.umuind);
 
     Input.rte.numu   = Input.rte.nstr + Input.rte.numu;
   }
@@ -3413,7 +3640,8 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   }
 
   /* check the wavelength range */
-  if (Input.wl.end>850 && (Input.ck_scheme==CK_NONE && strlen(Input.filename[FN_MOL_TAU_ABS])==0))  {
+  /*
+  if (Input.wl.end>850 && (Input.ck_scheme==CK_CRS && strlen(Input.filename[FN_MOL_TAU_ABS])==0))  {
     status=-1;
     fprintf (stderr, "Error %d, you want to do a spectral calculation for wavelengths larger than 850 nm. While uvspec\n", status);
     fprintf (stderr, "    treats ozone absorption correctly, molecular absorption is NOT considered in monochromatic\n");
@@ -3432,7 +3660,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
     return -1;
   }
 
-  if (Input.wl.end>500 && (Input.ck_scheme==CK_NONE && strlen(Input.filename[FN_MOL_TAU_ABS])==0))  {
+  if (Input.wl.end>500 && (Input.ck_scheme==CK_CRS && strlen(Input.filename[FN_MOL_TAU_ABS])==0))  {
     if (!Input.quiet)  {
       fprintf (stderr, "\n");
       fprintf (stderr, "*** WARNING, you want to do a spectral calculation for wavelengths larger\n");
@@ -3460,6 +3688,7 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
       fprintf (stderr, "\n");
     }
   }
+  */
 
 
   /**************************************/
@@ -3470,7 +3699,10 @@ suitable default atmosphere file, if no \code{atmosphere_file} is specified.
   if (Input.rte.mc.readrandomseed) {
     /* read random seed for debugging purposes */
     if ((randomseedfile = fopen(randomseedfilename, "r")) != NULL) {
-      fscanf(randomseedfile,"%d",&rseed);
+      if ( ! fscanf(randomseedfile,"%d",&rseed) ) {
+        fprintf(stderr,"Error reading file %s!\n",randomseedfilename);
+        return -1;
+      }
       (void) fclose (randomseedfile);
     }
   }
@@ -3587,7 +3819,7 @@ int status=0;
       status=write_header(Input, output, f);
       if (status) {
         fprintf (stderr, "Error, returned from write_header (line %d, function '%s' in '%s')\n", __LINE__, __func__, __FILE__);
-	return -1;
+    return -1;
       }
 
     if (Input.rte.solver != SOLVER_POLRADTRAN) {
@@ -3595,7 +3827,7 @@ int status=0;
       status=write_user_defined_output(Input, output, f);
       if (status) {
         fprintf (stderr, "Error, returned from write_user_defined_output (line %d, function '%s' in '%s')\n", __LINE__, __func__, __FILE__);
-	return -1;
+    return -1;
       }
     }
     else { /* -> Input.rte.solver == SOLVER_POLRADTRAN) */
@@ -3658,6 +3890,11 @@ void write_flexstor_output(input_struct Input, output_struct *output, FILE *f)
     fprintf (f, "angstrom_alpha()  %f\n", Input.aer.alpha);
     fprintf (f, "angstrom_beta()  %f\n",  Input.aer.beta);
   }
+  if (Input.aer.alpha_2>=-800) {
+    fprintf (f, "king_byrne_alpha_0()  %f\n", Input.aer.alpha_0);
+    fprintf (f, "king_byrne_alpha_1()  %f\n", Input.aer.alpha_1);   
+    fprintf (f, "king_byrne_alpha_2()  %f\n", Input.aer.alpha_2);  
+  }
   fprintf (f, "mol_modify O3 (DU) %f\n", output->column[MOL_O3]);
   fprintf (f, "pressure(mb) %f\n", Input.pressure);
   fprintf (f, "self_day_of_year() %d\n", Input.UTC.tm_yday);
@@ -3686,23 +3923,23 @@ void write_flexstor_output(input_struct Input, output_struct *output, FILE *f)
     for (lev=0;lev<output->atm.nzout;lev++) {
       if (Input.rte.solver == SOLVER_FTWOSTR) {
         fprintf (f, "%7.3f %13.6e %13.6e %13.6e %13.6e ", 
-        	 output->wl.lambda_h[iv], 
-		 output->rfldir[lev][iv], 
-	         output->rfldn[lev][iv], 
-	         output->flup[lev][iv],
-	         output->uavg[lev][iv]);
+             output->wl.lambda_h[iv], 
+         output->rfldir[lev][iv], 
+             output->rfldn[lev][iv], 
+             output->flup[lev][iv],
+             output->uavg[lev][iv]);
       }
       else {
         fprintf (f, "%7.3f %7.3f %8.5f %13.6e %13.6e %13.6e %13.6e %13.6e %13.6e",
-      	           output->wl.lambda_h[iv], 
-		   output->sza_h[iv], 
-		   output->atm.zout_sur[lev],
-		   output->rfldir[lev][iv], 
-		   output->rfldn[lev][iv], 
-		   output->flup[lev][iv],
-		   output->uavgso[lev][iv], 
-		   output->uavgdn[lev][iv], 
-		   output->uavgup[lev][iv]);
+                     output->wl.lambda_h[iv], 
+           output->sza_h[iv], 
+           output->atm.zout_sur[lev],
+           output->rfldir[lev][iv], 
+           output->rfldn[lev][iv], 
+           output->flup[lev][iv],
+           output->uavgso[lev][iv], 
+           output->uavgdn[lev][iv], 
+           output->uavgup[lev][iv]);
       }
       fprintf (f, "\n");
     }
@@ -3804,6 +4041,12 @@ int write_header (input_struct Input, output_struct *output, FILE *f)
   case SOLVER_TWOSTREBE:
     printf("#rte_solver                   : twostrebe\n");
     break;
+  case SOLVER_TWOMAXRND:
+    printf("#rte_solver                   : twomaxrnd\n");
+    break;
+  case SOLVER_TWOMAXRND3C:
+    printf("#rte_solver                   : twomaxrnd3C\n");
+    break;
   case SOLVER_SSLIDAR:
     printf("#rte_solver                   : sslidar\n");
     break;
@@ -3843,7 +4086,7 @@ void write_polradtran_output (input_struct Input, output_struct *output, FILE *f
       for (is=0;is<Input.rte.polradtran[POLRADTRAN_NSTOKES];is++)
         fprintf (f, "%13.6e %13.6e ",
                  output->down_flux[lev][is][iv], 
-	         output->up_flux[lev][is][iv]);
+             output->up_flux[lev][is][iv]);
 
       fprintf (f, "\n");
 
@@ -3856,15 +4099,15 @@ void write_polradtran_output (input_struct Input, output_struct *output, FILE *f
           fprintf (f, "Stokes vector %c\n", Input.rte.pol_stokes[is]);
           for (iu=0; iu<Input.rte.numu; iu++) {
             /* printf("%7.4f ", output->mu_values[iu+Input.rte.nstr/2]);*/
-	    printf("%7.4f ", Input.rte.umu[iu]);
-	    printf("%13.6e ", 0.0);
-	    for (j=0; j<Input.rte.nphi; j++) {
-	      if (Input.rte.umu[iu] <= 0)
-	        fprintf (f, " %13.6e ", output->down_rad[lev][j][iu][is][iv]);
+        printf("%7.4f ", Input.rte.umu[iu]);
+        printf("%13.6e ", 0.0);
+        for (j=0; j<Input.rte.nphi; j++) {
+          if (Input.rte.umu[iu] <= 0)
+            fprintf (f, " %13.6e ", output->down_rad[lev][j][iu][is][iv]);
               else
-	        fprintf(f, " %13.6e ", output->up_rad[lev][j][iu][is][iv]);}
-	    printf("\n");
-	  }
+            fprintf(f, " %13.6e ", output->up_rad[lev][j][iu][is][iv]);}
+        printf("\n");
+      }
         }
       }
     }
@@ -3974,14 +4217,16 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
           fprintf (f, "%13.6e ", 4.0*PI*output->uavgup[lev][iv]);
           break;
         case OUTPUT_USER_SPHER_ALB:
-	  fprintf (f, "%13.6e ", output->albmed[iv]);
-	  break;
+          for (iu=0;iu<Input.rte.numu;iu++){
+           fprintf (f, "%13.6e ", output->albmed[iu][iv]);
+      }
+      break;
         case OUTPUT_USER_UU:
-   	  if ( Input.raman ) numu = Input.rte.maxumu-Input.rte.nstr; 
-	  else numu = Input.rte.numu;
+         if ( Input.raman ) numu = Input.rte.maxumu-Input.rte.nstr; 
+      else numu = Input.rte.numu;
           for (iu=0;iu<numu;iu++){
-	    if ( Input.raman ) iiu = Input.rte.umuind[iu];
-	    else iiu = iu;
+        if ( Input.raman ) iiu = Input.rte.umuind[iu];
+        else iiu = iu;
             for (j=0;j<Input.rte.nphi;j++) {
               fprintf (f, " %16.9e ", output->uu[lev][j][iiu][iv]);
             }
@@ -3996,7 +4241,7 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
           default:
             fprintf (f, "%13.6e ", 4.0*PI*output->uavg[lev][iv]);
           }
-	  break;
+      break;
         case OUTPUT_USER_UDIR:
           fprintf (f, "%13.6e ", output->uavgso[lev][iv]);
           break;
@@ -4013,7 +4258,7 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
           fprintf (f, "%13.6e ", output->uavg[lev][iv]);
           break;
         case OUTPUT_USER_ALB:
-	  fprintf (f, "%13.6e ", output->flup[lev][iv]/(output->rfldir[lev][iv]+output->rfldn[lev][iv]));
+      fprintf (f, "%13.6e ", output->flup[lev][iv]/(output->rfldir[lev][iv]+output->rfldn[lev][iv]));
           break;
         case OUTPUT_USER_SZA:
           fprintf (f, "%9.3f ", output->sza_h[iv]);
@@ -4035,7 +4280,7 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
           break;
         case OUTPUT_USER_M_RAD:
           fprintf (f, "%13.6e ", output->w_zout[lev][iv] * output->atm.microphys.dens_zout[MOL_AIR][lev] 
-                                 * 1.e+6 * 1.e-3 * Input.atm.mol_mass[MOL_AIR] / avogadro );   /* kg/ (m2 day) */
+                                 * 1.e+6 * 1.e-3 * Input.atm.mol_mass[MOL_AIR] / AVOGADRO );   /* kg/ (m2 day) */
           break;
         case OUTPUT_USER_P:
           fprintf (f, "%14.9f ", output->atm.microphys.press_zout[lev]);
@@ -4058,67 +4303,67 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
         case OUTPUT_USER_CLWC: /* (cwd[g/m3]/1000.)/rho_air[kg/m3] == cwc[kg/kg] */
           if (Input.i_wc!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_wc].microphys.lwc_zout[lev] * 1.e-3 / 
-			(output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/avogadro) );
+            (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/AVOGADRO) );
           else
             fprintf (f, "%13.6e ", 0.0 );
           break;
         case OUTPUT_USER_CLWD:
           if (Input.i_wc!=-1)
-	    fprintf (f, "%13.6e ", output->caoth[Input.i_wc].microphys.lwc_zout[lev]);
-	  else
-	    fprintf (f, "%13.6e ", 0.0 );
+        fprintf (f, "%13.6e ", output->caoth[Input.i_wc].microphys.lwc_zout[lev]);
+      else
+        fprintf (f, "%13.6e ", 0.0 );
           break;
         case OUTPUT_USER_TCLW:
           if (Input.i_wc!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_wc].microphys.tcw);
-	  else
-	    fprintf (f, "%13.6e ", 0.0 );
-	  break;
+      else
+        fprintf (f, "%13.6e ", 0.0 );
+      break;
         case OUTPUT_USER_REFF_WAT:
           if (Input.i_wc!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_wc].microphys.effr_zout[lev]);
-	  else
-	    fprintf (f, "%13.6e ", 0.0 );
+      else
+        fprintf (f, "%13.6e ", 0.0 );
           break;
         case OUTPUT_USER_CIWC: /* (cwd[g/m3]/1000.)/rho_air[kg/m3] == cwc[kg/kg] */
           if (Input.i_ic!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_ic].microphys.lwc_zout[lev] * 1.e-3 / 
-			(output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/avogadro) );
-	  else
-	    fprintf (f, "%13.6e ", 0.0 );
+            (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/AVOGADRO) );
+      else
+        fprintf (f, "%13.6e ", 0.0 );
           break;
         case OUTPUT_USER_CIWD:
           if (Input.i_ic!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_ic].microphys.lwc_zout[lev]);
-	  else
-	    fprintf (f, "%13.6e ", 0.0 );
+      else
+        fprintf (f, "%13.6e ", 0.0 );
           break;
         case OUTPUT_USER_TCIW:
           if (Input.i_ic!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_ic].microphys.tcw);
-	  else
-	    fprintf (f, "%13.6e ", 0.0 );
-	  break;
+      else
+        fprintf (f, "%13.6e ", 0.0 );
+      break;
         case OUTPUT_USER_REFF_ICE:
           if (Input.i_ic!=-1) {
             if (Input.caoth[isp].properties==PROP_FU && Input.caoth[isp].fu2yang) 
               fprintf (f, "%13.6e ", output->caoth[Input.i_ic].microphys.effr_zout[lev]*(3.0*sqrt(3.0)/4.0));
             else
               fprintf (f, "%13.6e ", output->caoth[Input.i_ic].microphys.effr_zout[lev]);
-	  }
-	  else
-	    fprintf (f, "%13.6e ", 0.0 );
+      }
+      else
+        fprintf (f, "%13.6e ", 0.0 );
           break;
         case OUTPUT_USER_TCW:
           if (Input.i_wc!=-1 && Input.i_ic!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_wc].microphys.tcw + output->caoth[Input.i_ic].microphys.tcw);
-	  else if (Input.i_wc!=-1)
+      else if (Input.i_wc!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_wc].microphys.tcw);
-	  else if (Input.i_ic!=-1)
+      else if (Input.i_ic!=-1)
             fprintf (f, "%13.6e ", output->caoth[Input.i_ic].microphys.tcw);
           else
-	    fprintf (f, "%13.6e ", 0.0 );
-	  break;
+        fprintf (f, "%13.6e ", 0.0 );
+      break;
         case OUTPUT_USER_CC:
           fprintf (f, "%13.6e ", output->cf.cf_zout[lev]);
           break;
@@ -4128,12 +4373,12 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
         case OUTPUT_USER_CLOUDS:
           if (Input.i_wc!=-1 && Input.i_ic!=-1)
             fprintf (f, "%13d ", 3);
-	  else if (Input.i_wc!=-1)
+      else if (Input.i_wc!=-1)
             fprintf (f, "%13d ", 2); 
-	  else if (Input.i_ic!=-1)
+      else if (Input.i_ic!=-1)
             fprintf (f, "%13d ", 1);
           else
-	    fprintf (f, "%13d ", 0 );
+        fprintf (f, "%13d ", 0 );
           break;
         case OUTPUT_USER_N:
           i_gas = Input.output_user_gas[io];
@@ -4142,7 +4387,7 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
         case OUTPUT_USER_RHO:   /* 1.e+6: convert from cm-3 to m-3; 1.e-3: convert g -> kg */
           i_gas = Input.output_user_gas[io];
           fprintf (f, "%13.6e ", output->atm.microphys.dens_zout[i_gas][lev] 
-                                 * 1.e+6 * 1.e-3 * Input.atm.mol_mass[i_gas] / avogadro);                   
+                                 * 1.e+6 * 1.e-3 * Input.atm.mol_mass[i_gas] / AVOGADRO);                   
           break;
         case OUTPUT_USER_VMR:
           i_gas = Input.output_user_gas[io];
@@ -4196,18 +4441,18 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
                                   output->wind.v_zout[lev] * output->atm.microphys.dtheta_dy[lev] +
                                   output->wind.w_zout[lev] * output->atm.microphys.dtheta_dz[lev]  ) *24*60*60 ); /* in K/day */
           break;
-	case OUTPUT_USER_SSLIDAR_NPHOT:
+    case OUTPUT_USER_SSLIDAR_NPHOT:
           fprintf (f, "%13.6e ", output->sslidar_nphot[lev][iv]);
           break;
-	case OUTPUT_USER_SSLIDAR_NPHOT_Q:
+    case OUTPUT_USER_SSLIDAR_NPHOT_Q:
           fprintf (f, "%13.6e ", output->sslidar_nphot_q[lev][iv]);
           break;
-	case OUTPUT_USER_SSLIDAR_RATIO:
+    case OUTPUT_USER_SSLIDAR_RATIO:
           fprintf (f, "%13.6e ", output->sslidar_ratio[lev][iv]);
           break;
         default:
           fprintf (stderr, "Error, unknown user output %d\n", Input.output_user[io]);
-	  return -1;
+      return -1;
         }
       }
       if (Input.n_output_user>0)
@@ -4220,61 +4465,63 @@ int write_user_defined_output(input_struct Input, output_struct *output, FILE *f
                                               AK20091116  */ 
       
          if (Input.rte.numu > 0 && !output->print_phi) {
-	    if ( Input.raman ) {
-	      numu = Input.rte.maxumu-Input.rte.nstr; 
-   	    }
-	    else {
-	      numu = Input.rte.numu;
-	    }
+        if ( Input.raman ) {
+          numu = Input.rte.maxumu-Input.rte.nstr; 
+           }
+        else {
+          numu = Input.rte.numu;
+        }
             for (iu=0;iu<numu;iu++) {
-	      if ( Input.raman ) iiu = Input.rte.umuind[iu];
-	      else iiu = iu;
+          if ( Input.raman ) iiu = Input.rte.umuind[iu];
+          else iiu = iu;
               fprintf (f, "%7.4f %16.6e \n", Input.rte.umu[iiu], output->u0u[lev][iiu][iv]);
-	    }
+        }
          }
          if (output->print_phi && Input.rte.numu> 0 && write_rad == TRUE) {
-	   switch (Input.rte.solver) {
-	   case SOLVER_FDISORT1:
+       switch (Input.rte.solver) {
+       case SOLVER_FDISORT1:
            case SOLVER_FDISORT2:
            case SOLVER_DISORT:
            case SOLVER_SDISORT:
-	   case SOLVER_SPSDISORT:
-	   case SOLVER_SSS:
-	   case SOLVER_SSSI:
-	   case SOLVER_TZS:
-	     if ( Input.raman ) {
-	       numu = Input.rte.maxumu-Input.rte.nstr; 
-  	     }
-  	     else {
-  	       numu = Input.rte.numu;
-  	     }
+       case SOLVER_SPSDISORT:
+       case SOLVER_SSS:
+       case SOLVER_SSSI:
+       case SOLVER_TZS:
+         if ( Input.raman ) {
+           numu = Input.rte.maxumu-Input.rte.nstr; 
+           }
+           else {
+             numu = Input.rte.numu;
+           }
              fprintf (f, "                      ");
              for (j=0;j<Input.rte.nphi;j++)
                fprintf (f, " %16.3f ", Input.rte.phi[j]);
              fprintf (f, "\n");
              for (iu=0;iu<numu;iu++) {
-  	     if ( Input.raman ) iiu = Input.rte.umuind[iu];
-  	     else iiu = iu;
+           if ( Input.raman ) iiu = Input.rte.umuind[iu];
+           else iiu = iu;
                fprintf (f, "%7.4f %16.9e ", Input.rte.umu[iiu], output->u0u[lev][iiu][iv]);
                for (j=0;j<Input.rte.nphi;j++)
                   fprintf (f, " %16.9e ", output->uu[lev][j][iiu][iv]);
                fprintf (f, "\n");
              }
-	     break;
-	   case SOLVER_FTWOSTR:
-	   case SOLVER_SOS:
-	   case SOLVER_MONTECARLO:
-	   case SOLVER_POLRADTRAN:
-	   case SOLVER_NULL:
-	   case SOLVER_RODENTS:
-	   case SOLVER_TWOSTREBE:
-	   case SOLVER_TWOSTR:
-	   case SOLVER_SSLIDAR:
-	     break;
-	   default:
-	     fprintf (stderr, "Error, unknown rte_solver %d (line %d, function '%s' in '%s')\n", Input.rte.solver, __LINE__, __func__, __FILE__);
-	     return -1;
-	   }
+         break;
+       case SOLVER_FTWOSTR:
+       case SOLVER_SOS:
+       case SOLVER_MONTECARLO:
+       case SOLVER_POLRADTRAN:
+       case SOLVER_NULL:
+       case SOLVER_RODENTS:
+       case SOLVER_TWOSTREBE:
+       case SOLVER_TWOMAXRND:
+       case SOLVER_TWOMAXRND3C:
+       case SOLVER_TWOSTR:
+       case SOLVER_SSLIDAR:
+         break;
+       default:
+         fprintf (stderr, "Error, unknown rte_solver %d (line %d, function '%s' in '%s')\n", Input.rte.solver, __LINE__, __func__, __FILE__);
+         return -1;
+       }
          }
        } /* radiance output */
 
@@ -4388,9 +4635,9 @@ int write_netCDF_output (input_struct Input, output_struct *output)
   /* get identification number and read data */
 
   /* get id for dimension "time" (the dimension, not the variable) */
-  if      (Input.time_zone==TIME_UTC)
+  if      (Input.time_zone==TIMEZONE_UTC)
     status = nc_inq_dimid (ncid, "time", &(id_ntime));
-  else if (Input.time_zone==TIME_LAT)
+  else if (Input.time_zone==TIMEZONE_LAT)
     status = nc_inq_dimid (ncid, "local_apparent_time", &(id_ntime)); 
   else {
     fprintf (stderr, "Error, unknown time_zone %d (line %d, function '%s' in '%s')\n", Input.time_zone, __LINE__, __func__, __FILE__);
@@ -4461,11 +4708,11 @@ int write_netCDF_output (input_struct Input, output_struct *output)
 
   /* search index */
 
-  if (Input.time_zone==TIME_UTC)
+  if (Input.time_zone==TIMEZONE_UTC)
     status = get_time_index (ncid, Input.UTC, TIME_NEAREST_DATE, 
                              &(nt), &(itime1), &(itime2), &(dt),
                              Input.verbose, Input.quiet);
-  else if (Input.time_zone==TIME_LAT)
+  else if (Input.time_zone==TIMEZONE_LAT)
     status = get_local_apparent_time_index (ncid, Input.LAT, TIME_NEAREST_DATE, 
                                             &(nt), &(itime1), &(itime2), &(dt),
                                             Input.verbose, Input.quiet);
@@ -4699,8 +4946,8 @@ int write_netCDF_output (input_struct Input, output_struct *output)
           break;
         case OUTLEVEL_PRESS:
         case OUTLEVEL_MODEL_LEVELS:
-	case OUTLEVEL_MODEL_LAYERS:
-	case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
+    case OUTLEVEL_MODEL_LAYERS:
+    case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
           status = write_netCDF_4D_float (ncid, Input.filename[FN_OUTFILE], 
                                           "zout_sur", "altitude above surface", "km", output->atm.zout_sur, 
                                           id_dim_array4, index_4D, dim4, n_4D, output->atm.zout_index, &(simulation_done));
@@ -4710,7 +4957,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
           } 
           break;
         default:
-	  fprintf (stderr, "Error, unknown zout_source %d (line %d, function '%s' in '%s')\n", Input.atm.zout_source, __LINE__, __func__, __FILE__);
+      fprintf (stderr, "Error, unknown zout_source %d (line %d, function '%s' in '%s')\n", Input.atm.zout_source, __LINE__, __func__, __FILE__);
           return -2;
         }
         break;
@@ -4736,8 +4983,8 @@ int write_netCDF_output (input_struct Input, output_struct *output)
           break;
         case OUTLEVEL_PRESS:
         case OUTLEVEL_MODEL_LEVELS:
-	case OUTLEVEL_MODEL_LAYERS:
-	case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
+    case OUTLEVEL_MODEL_LAYERS:
+    case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
           status = write_netCDF_4D_float (ncid, Input.filename[FN_OUTFILE], 
                                           "zout_sea", "altitude above sealevel", "km", output->atm.zout_sea, 
                                           id_dim_array4, index_4D, dim4, n_4D, output->atm.zout_index, &(simulation_done));
@@ -4747,7 +4994,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
           } 
           break;
         default:
-	  fprintf (stderr, "Error, unknown zout_source %d (line %d, function '%s' in '%s')\n", Input.atm.zout_source, __LINE__, __func__, __FILE__);
+      fprintf (stderr, "Error, unknown zout_source %d (line %d, function '%s' in '%s')\n", Input.atm.zout_source, __LINE__, __func__, __FILE__);
           return -2;
         }
         break;
@@ -5148,7 +5395,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         for (iv=0;iv<output->wl.nlambda_h;iv++)
           for (lev=0;lev<output->atm.nzout;lev++) 
             tmp_data_3D[lev][iv] = output->w_zout[lev][iv] * output->atm.microphys.dens_zout[MOL_AIR][lev] 
-                                   * 1.0e+6 * 1.0e-3 * Input.atm.mol_mass[MOL_AIR] / avogadro;   /* kg/ (m2 day) */
+                                   * 1.0e+6 * 1.0e-3 * Input.atm.mol_mass[MOL_AIR] / AVOGADRO;   /* kg/ (m2 day) */
 
         status = write_netCDF_5D_float (ncid, Input.filename[FN_OUTFILE], 
                                         "m_rad", "radiative vertical mass flux", "kg/(m2 day)", tmp_data_3D,
@@ -5167,8 +5414,8 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         case OUTLEVEL_ATM_LEVELS:
         case OUTLEVEL_ALL_LEVELS:
         case OUTLEVEL_MODEL_LEVELS:
-	case OUTLEVEL_MODEL_LAYERS:
-	case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
+    case OUTLEVEL_MODEL_LAYERS:
+    case OUTLEVEL_MODEL_LEVELS_AND_LAYERS:
           status = write_netCDF_4D_float (ncid, Input.filename[FN_OUTFILE], 
                                           "p", "pressure", "hPa", output->atm.microphys.press_zout, 
                                           id_dim_array4, index_4D, dim4, n_4D, output->atm.zout_index, &(simulation_done));
@@ -5191,7 +5438,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
           }
           break;
         default:
-	  fprintf (stderr, "Error, unknown zout_source %d (line %d, function '%s' in '%s')\n", Input.atm.zout_source, __LINE__, __func__, __FILE__);
+      fprintf (stderr, "Error, unknown zout_source %d (line %d, function '%s' in '%s')\n", Input.atm.zout_source, __LINE__, __func__, __FILE__);
           return -2;
         }
         break;
@@ -5260,9 +5507,9 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         for (lev=0;lev<output->atm.nzout;lev++) 
           if (Input.i_wc!=-1)
             tmp_data_1D[lev] = output->caoth[Input.i_wc].microphys.lwc_zout[lev] * 1.e-3 / 
-                             (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/avogadro) ;
-	  else
-	    tmp_data_1D[lev] = 0.0;
+                             (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/AVOGADRO) ;
+      else
+        tmp_data_1D[lev] = 0.0;
 
         /* write data */
         status = write_netCDF_4D_float (ncid, Input.filename[FN_OUTFILE], 
@@ -5285,7 +5532,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
           if (status!=0) {
             fprintf (stderr, " *** Error, while writing 'CLWD' into %s, %s (%s)\n", 
                              Input.filename[FN_OUTFILE], function_name, file_name );
-	  }
+      }
         }
         break;
 
@@ -5298,7 +5545,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
             fprintf (stderr, " *** Error, while writing 'TCLW' into %s, %s (%s)\n", 
                              Input.filename[FN_OUTFILE], function_name, file_name );
           }
-	}
+    }
         break;
 
       case OUTPUT_USER_REFF_WAT:
@@ -5310,7 +5557,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
             fprintf (stderr, " *** Error, while writing 'reff_wat' into %s, %s (%s)\n", 
                              Input.filename[FN_OUTFILE], function_name, file_name );
           }
-	}
+    }
         break;
 
       case OUTPUT_USER_CIWC: /* lwc[g/m3]*1000./rho_air[kg/m3] == clwc[kg/kg] */
@@ -5325,7 +5572,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         for (lev=0;lev<output->atm.nzout;lev++) 
           if (Input.i_ic!=-1)
             tmp_data_1D[lev] = output->caoth[Input.i_ic].microphys.lwc_zout[lev] * 1.e-3 / 
-	      (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/avogadro) ;
+          (output->atm.microphys.dens_zout[MOL_AIR][lev]*1.e+6*1.e-3*Input.atm.mol_mass[MOL_AIR]/AVOGADRO) ;
           else
             tmp_data_1D[lev] = 0.0;
         /* write data */
@@ -5350,7 +5597,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
             fprintf (stderr, " *** Error, while writing 'CIWD' into %s, %s (%s)\n", 
                              Input.filename[FN_OUTFILE], function_name, file_name );
           }
-	}
+    }
         break;
 
       case OUTPUT_USER_TCIW:
@@ -5362,7 +5609,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
             fprintf (stderr, " *** Error, while writing 'TCIW' into %s, %s (%s)\n", 
                              Input.filename[FN_OUTFILE], function_name, file_name );
           }
-	}
+    }
         break;
 
       case OUTPUT_USER_REFF_ICE:
@@ -5375,15 +5622,15 @@ int write_netCDF_output (input_struct Input, output_struct *output)
 
         if (Input.i_ic!=-1) {
           if (Input.caoth[isp].properties==PROP_FU && Input.caoth[isp].fu2yang) 
-	    for (lev=0; lev<output->atm.nzout; lev++)
-	      tmp_data_1D[lev] = output->caoth[Input.i_ic].microphys.effr_zout[lev] * (3.0*sqrt(3.0)/4.0);
+        for (lev=0; lev<output->atm.nzout; lev++)
+          tmp_data_1D[lev] = output->caoth[Input.i_ic].microphys.effr_zout[lev] * (3.0*sqrt(3.0)/4.0);
           else
             for (lev=0; lev<output->atm.nzout; lev++)
-	      tmp_data_1D[lev] = output->caoth[Input.i_ic].microphys.effr_zout[lev];
+          tmp_data_1D[lev] = output->caoth[Input.i_ic].microphys.effr_zout[lev];
         }
-	else
-	  for (lev=0; lev<output->atm.nzout; lev++)
-	    tmp_data_1D[lev] = 0.0;
+    else
+      for (lev=0; lev<output->atm.nzout; lev++)
+        tmp_data_1D[lev] = 0.0;
 
         status = write_netCDF_4D_float (ncid, Input.filename[FN_OUTFILE], 
                                         "reff_ice", "effective radius ice water cloud",    "micro m", tmp_data_1D, 
@@ -5402,11 +5649,11 @@ int write_netCDF_output (input_struct Input, output_struct *output)
           status = write_netCDF_3D_float (ncid, Input.filename[FN_OUTFILE],
                                           "TCW", "Total Column Water", "kg/m2", output->caoth[Input.i_wc].microphys.tcw + output->caoth[Input.i_ic].microphys.tcw, 
                                           id_dim_array3, index_3D, dim3);
-	else if (Input.i_wc!=-1)
+    else if (Input.i_wc!=-1)
           status = write_netCDF_3D_float (ncid, Input.filename[FN_OUTFILE],
                                           "TCW", "Total Column Water", "kg/m2", output->caoth[Input.i_wc].microphys.tcw,
                                           id_dim_array3, index_3D, dim3);
-	else if (Input.i_ic!=-1)
+    else if (Input.i_ic!=-1)
           status = write_netCDF_3D_float (ncid, Input.filename[FN_OUTFILE],
                                           "TCW", "Total Column Water", "kg/m2", output->caoth[Input.i_ic].microphys.tcw, 
                                           id_dim_array3, index_3D, dim3);
@@ -5439,11 +5686,11 @@ int write_netCDF_output (input_struct Input, output_struct *output)
 
       case OUTPUT_USER_CLOUDS:
         iscr=0;
-	if (Input.i_wc!=-1)
-	  iscr+=2;
-	if (Input.i_ic!=-1)
-	  iscr+=1;
-	  
+    if (Input.i_wc!=-1)
+      iscr+=2;
+    if (Input.i_ic!=-1)
+      iscr+=1;
+      
         status = write_netCDF_3D_float (ncid, Input.filename[FN_OUTFILE], 
                                         "clouds", "Clouds: IC=1, WC=2, IC+WC=3", "0-3", iscr, 
                                         id_dim_array3, index_3D, dim3);
@@ -5503,7 +5750,7 @@ int write_netCDF_output (input_struct Input, output_struct *output)
         /* calculate data */  /* 1.e+6: convert from cm-3 to m-3; 1.e-3: convert g -> kg */
         for (lev=0;lev<output->atm.nzout;lev++) 
           tmp_data_1D[lev] = output->atm.microphys.dens_zout[i_gas][lev] 
-                               * 1.e+6 * 1.e-3 * Input.atm.mol_mass[i_gas] / avogadro ;  
+                               * 1.e+6 * 1.e-3 * Input.atm.mol_mass[i_gas] / AVOGADRO ;  
 
         /* write data */
         status = write_netCDF_4D_float (ncid, Input.filename[FN_OUTFILE], 
@@ -6047,39 +6294,39 @@ static void free_output(input_struct Input, output_struct *output)
 
   if (output->down_flux != NULL)
     ASCII_free_float_3D (output->down_flux, 
-	                 output->atm.nzout, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
+                     output->atm.nzout, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
 
   if (output->down_flux_t != NULL)
     ASCII_free_float_3D (output->down_flux_t, 
-			 output->atm.nzout, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
+             output->atm.nzout, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
   
   if (output->up_flux != NULL)
     ASCII_free_float_3D (output->up_flux, 
-			 output->atm.nzout, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
+             output->atm.nzout, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
   
   if (output->up_flux_t != NULL)
     ASCII_free_float_3D (output->up_flux_t, 
-			 output->atm.nzout, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
+             output->atm.nzout, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
   
   if (output->down_rad != NULL)
     ASCII_free_float_5D (output->down_rad, 
-			 output->atm.nzout, Input.rte.nphi, 
-			 Input.rte.numu, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
+             output->atm.nzout, Input.rte.nphi, 
+             Input.rte.numu, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
   
   if (output->down_rad_t != NULL)
     ASCII_free_float_5D (output->down_rad_t, 
-			 output->atm.nzout, Input.rte.nphi,
-			 Input.rte.numu, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
+             output->atm.nzout, Input.rte.nphi,
+             Input.rte.numu, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
   
   if (output->up_rad != NULL)
     ASCII_free_float_5D (output->up_rad, 
-			 output->atm.nzout, Input.rte.nphi,
-			 Input.rte.numu, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
+             output->atm.nzout, Input.rte.nphi,
+             Input.rte.numu, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
   
   if (output->up_rad_t != NULL)
     ASCII_free_float_5D (output->up_rad_t, 
-			 output->atm.nzout, Input.rte.nphi,
-			 Input.rte.numu, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
+             output->atm.nzout, Input.rte.nphi,
+             Input.rte.numu, Input.rte.polradtran[POLRADTRAN_NSTOKES]);
 
   for (isp=0; isp<Input.n_caoth; isp++) {
     if (output->mc.dt != NULL) {
@@ -6124,211 +6371,113 @@ static void free_output(input_struct Input, output_struct *output)
 
 
 static float yytext2float(char* yytext, int which_token, int max_token) {
-  double dnumber=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL;
-  int count=0;
-  char *tmpstring=NULL;
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  count = 1;
-  while ((p = strtok(NULL,token)) != NULL) {
-    count++;
-    if (count == which_token)
-      s = p;
-  }
-  
-  if ((count != which_token) && (count>max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d\n", line_number+1);
-  
-  dnumber = atof(s);
-  free(tmpstring);
-  return (float) dnumber;
+  return (float) yytext2double(yytext, which_token, max_token);
 }
 
 
 static double yytext2double(char* yytext, int which_token, int max_token) {
-  double dnumber=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL;
-  int count=0;
-  char *tmpstring=NULL;
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-  
-  p = strtok(tmpstring,token);
-  count = 1;
-  while ((p = strtok(NULL,token)) != NULL) {
-    count++;
-    if (count == which_token)
-      s = p;
+  double dnumber = 0;
+  char *tok;
+  tok = yytext2string(yytext, which_token, max_token);
+  if (tok != NULL) {
+    dnumber = atof(tok);
+    free(tok);
   }
-  
-  if ((count != which_token) && (count>max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d\n", line_number+1);
-  
-  dnumber = atof(s);
-
-  free(tmpstring);
   return dnumber;
 }
 
-
 static float* yytext2floats(char* yytext, int nary) {
-  int i=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL;
-  char *tmpstring=NULL;
-  
-  /* Fill up ary */
-  float *ary = (float *) calloc (nary, sizeof(float));
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
+  char **toks;
+  char **p;
+  int i, count;
+  float *ary = NULL;
 
-  p = strtok(tmpstring,token);
-  i = 0;
+  toks = tokens_parse(yytext, &count);
 
-  while ((p = strtok(NULL,token)) != NULL)
-    ary[i++] = atof(p);
-
-  free(tmpstring);
+  if (nary < count) {
+    ary = (float *) calloc(nary, sizeof(float));
+    /* intentionally skipping first token */
+    for(i=0, p=toks+1; i < nary; i++, p++) {
+      ary[i] = (float) atof(*p);
+    }
+  } else {
+    fprintf(stderr, "yytext2floats: expected=%d actual=%d\n", nary, count);
+  }
+  if (count > 0) {tokens_free(toks, count);}
   return ary;
 }
 
 
 static int* yytext2integers(char* yytext, int nary) {
-  int i=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL;
-  char *tmpstring=NULL;
-  
-  /* Fill up ary */
-  int *ary    = (int *) calloc (nary, sizeof(int));
+  char **toks;
+  char **p;
+  int i, count;
+  int *ary = NULL;
 
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  i = 0;
-
-  while ((p = strtok(NULL,token)) != NULL)
-    ary[i++] = atoi(p);
-
-  free(tmpstring);
-  return ary;
+  toks = tokens_parse(yytext, &count);
+  if (nary < count) {
+    ary = (int *) calloc(nary, sizeof(int));
+    p=toks;p++; /* Skip first token as that is name of option */
+    for(i=0; i < nary; i++, p++) {
+      ary[i] = atoi(*p);
+    }
+  } else {
+    fprintf(stderr, "yytext2integers: expected=%d actual=%d\n", nary, count);
+  }
+  if (count > 0) {tokens_free(toks, count);}
+ return ary;
 }
 
 
-static int yytext2ntokens(char* yytext) {
-  int nary=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL;
-  char *tmpstring=NULL;
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
+static int yytext2ntokens(char *yytext) {
+  char **toks;
+  int count;
+  toks = tokens_parse(yytext, &count);
+  if (count > 0) {tokens_free(toks, count);}
+  /* 0 means there is 1 token */
+  return count-1;
 
-  /* Get number of ary elements */
-  nary = 0;
-  p = strtok(tmpstring,token);
-
-  while ((p = strtok(NULL,token)) != NULL) 
-    nary++;
-
-  free(tmpstring);
-  return nary;
 }
 
 
 static int yytext2int(char* yytext, int which_token, int max_token) {
-  int inumber=0;
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL;
-  int count=0;
-  char *tmpstring=NULL;
-  
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  count = 1;
-  while ((p = strtok(NULL,token)) != NULL) {
-    count++;
-    if (count == which_token)
-      s = p;
+  int number = 0;
+  char *tok;
+  tok = yytext2string(yytext, which_token, max_token);
+  if (tok != NULL) {
+    number = atoi(tok);
+    free(tok);
   }
-
-  if ((count != which_token) && (count>max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d\n", line_number+1);
-
-  inumber = atoi(s);
-
-  free(tmpstring);
-  return inumber;
+  return number;
 }
 
+static char *yytext2string(char *yytext, int which_token, int max_token) {
+  char **toks;
+  char *ret = NULL;
+  int count;
 
-static char* yytext2string(char* yytext, int which_token, int max_token) {
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL, *string=NULL, *tmpstring=NULL;
-  int count=0;
+  toks = tokens_parse(yytext, &count);
 
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  count = 1;
-  if (which_token == 1) {
-    s = p;
-  }
-  else { 
-    while ((p = strtok(NULL,token)) != NULL) {
-      count++;
-      if (count == which_token)
-        s = p;
-    }
-  }
-
-  if ((count != which_token) && (count > max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d (yytext2string) \n", line_number+1);
-
-  string = (char *) calloc (strlen(s)+1, sizeof (char));
-  strcpy (string, s);
-
-  free(tmpstring);
-
-  return string;
-}
+  if ((which_token > 0) && (which_token <= count)) {
+    ret = strdup(toks[which_token-1]);
+  } else {
+    fprintf(stderr, "yytext2string: expected=%d actual=%d\n", which_token, count);
+    fprintf(stderr, "yytext2string: <%s>\n", yytext);
+    exit(1);
+   }
+  if (count > 0) {tokens_free(toks, count);}
+  return ret;
+} 
 
 
 /* like yytext2string, but string is copied to a pre-allocated string dest */
-static int yytextCstring(char *dest, char* yytext, int which_token, int max_token) {
-  char token[]=UVSPEC_TOKEN;
-  char *p=NULL, *s=NULL, *tmpstring=NULL;
-  int count=0;
-
-  tmpstring = (char *) calloc (strlen(yytext)+1, sizeof (char));
-  strcpy (tmpstring, yytext);
-
-  p = strtok(tmpstring,token);
-  count = 1;
-  while ((p = strtok(NULL,token)) != NULL) {
-    count++;
-    if (count == which_token)
-      s = p;
+static int yytextCstring(char *dest, char *yytext, int which_token, int max_token) {
+  char *tok;
+  tok = yytext2string(yytext, which_token, max_token);
+  if (tok != NULL) {
+    strcpy(dest, tok);
+    free(tok);
   }
-
-  if ((count != which_token) && (count>max_token))
-    fprintf(stderr,"Wrong number of arguments on line %d\n", line_number+1);
-
-  strcpy (dest, s);
-
-  free(tmpstring);
   return 0;
 }
 
@@ -6376,7 +6525,7 @@ static float* add_cmu_to_umu(int nstr, int numu, int maxumu, float* oldumu, int*
   for (j=0;j<numu;j++) {
     for (i=0;i<maxumu;i++) {
       if (fabs(umu[i]-oldumu[j]) < FLT_MIN ) {
-	umuind[k++] = i;   /* These are the indices for the user angles */
+    umuind[k++] = i;   /* These are the indices for the user angles */
       }
     }
   }
@@ -6389,7 +6538,7 @@ static float* add_cmu_to_umu(int nstr, int numu, int maxumu, float* oldumu, int*
   for (j=0;j<maxumu;j++) {
     not = 0;
     for (i=0;i<numu;i++) {
-      if ( j == umuind[i] ) {	not = 1; }
+      if ( j == umuind[i] ) {    not = 1; }
       
 
     }
@@ -6400,4 +6549,85 @@ static float* add_cmu_to_umu(int nstr, int numu, int maxumu, float* oldumu, int*
   return umu;
 }
 
+static int tokens_parse_one(char *in, char *out, int max, char **saveptr) {
+
+  int len = 0;
+  int ret = 1;
+  enum {START, IN_QUOTED_TOKEN, IN_TOKEN, ACCEPT} state;
+  state = START;
+
+  /* ensure "out" will be null terminated */
+  memset(out, '\0', max);
+  if (in == NULL) { in = *saveptr; }
+  if (*in == '\0') { ret = 0; }
+  while ((state != ACCEPT) && (*in != '\0')) {
+    switch (*in) {
+      case '"':
+        switch (state) {
+          case START:
+            state = IN_QUOTED_TOKEN;
+            break;
+          case IN_QUOTED_TOKEN:
+          case IN_TOKEN:
+          case ACCEPT:
+            state = ACCEPT;
+            break;
+        }
+        break;
+      case ' ':
+        switch (state) {
+          case START:
+            break;
+          case IN_QUOTED_TOKEN:
+            if (len < max-1) { out[len] = *in; }
+            len++;
+            break;
+          case IN_TOKEN:
+          case ACCEPT:
+            state = ACCEPT;
+            break;
+        }
+        break;
+      case '\n':
+        state = ACCEPT;
+        break;
+      default:
+        if (state == START) { state = IN_TOKEN; }
+        if (len < max-1)    { out[len] = *in; }
+        len++;
+        break;
+    }
+    in++;
+  }
+  *saveptr = in;
+  return ret;
+}
+
+static char **tokens_parse(char *yytext, int *count) {
+  char buf[8192];
+  char *saveptr = NULL;
+  int ret;
+  int i = 0;
+
+  memset(buf, '\0', sizeof(buf));
+  char **toks = NULL;
+  ret = tokens_parse_one(yytext, buf, sizeof(buf), &saveptr);
+  while (ret != 0) {
+    i++;
+    toks = realloc(toks, i * sizeof(char *));
+    toks[i-1] = strdup(buf);
+    ret = tokens_parse_one(NULL, buf, sizeof(buf), &saveptr);
+  }
+  *count = i;
+  return toks;
+}
+
+static void tokens_free(char **toks, int count) {
+  char **p;
+  int i;
+  for(i=0, p=toks; i < count; i++, p++) {
+    if (*p != NULL) { free(*p); }
+  }
+  free(toks);
+}
 

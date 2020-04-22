@@ -72,27 +72,25 @@ class IntegerInput(NumberInput):
 class ListInput(Input):
     """ Valid inputs are one among a list of strings """
 
-    def __init__(self, default=None, valid_range=None, optional=False,logical_file=False,**kwargs):
+    def __init__(self, default=None, valid_range=None, optional=False,logical_file=False,
+                 **kwargs):
         Input.__init__(self, optional=optional, **kwargs)
         
         assert not valid_range is None, "You must provide a range of choices!"
 
         self.valid_range = []
-
         for val in valid_range:
-            if isinstance(val,str):
-                self.valid_range.append( val.lower() )
-        else:
-            self.valid_range.append( val )
+            if isinstance(val,str): self.valid_range.append( val.lower() )
+            else:                   self.valid_range.append( val )
 
         if optional:
             if self.valid_range.count(""):
                 self.valid_range.remove("")
             self.valid_range.insert(0,"")
 
-        if isinstance(default,str): 
+        if isinstance(default,str):
             default=default.lower()
-        if default is None: 
+        if default is None:
             default = self.valid_range[0]
         assert default in self.valid_range, "Default not among valid options!"
         self.default = default
@@ -113,4 +111,3 @@ class VariableNumberOfLinesInput(Input):
         Input.__init__(self, **kwargs)
         assert not valid_range is None
         self.valid_range = valid_range
-

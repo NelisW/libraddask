@@ -61,9 +61,6 @@ The relevant code here is taken from libRadtran version 2.0
 # TODO Dealing with exceptions, warnings. Keywords missing from the options library etc.
 # TODO dealing with setting of units based on whatever is known about inputs/outputs, thermal is W/m^2/cm^-1
 
-# from . import writeLex  # This imports all the libradtran option definitions
-# from . import writeLex  # This imports all the libradtran option definitions
-from libraddask.libradtran import writeLex
 
 import os
 import easygui  # For file open dialogs
@@ -71,16 +68,15 @@ import numpy as np
 import xarray as xr
 import re
 import warnings
-
-# from libraddask.rad import xd 
-# import xd
-# from libraddask import xd 
-import libraddask.rad.xd as xd
-
 import copy
 from itertools import chain  #Used in RadEnv constructor
 import matplotlib.pyplot as plt
 import sys
+
+# import local files
+import libraddask.rad.xd as xd
+from libraddask.libradtran import writeLex
+
 
 _isfloatnum = '^[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$'  # regular expression for matching tokens to floating point
 
@@ -1021,7 +1017,7 @@ class Case(object):
             uvINP.write(alldata)
 
     def distribute_flux_data(self, fluxdata):
-        """ Distribute flux/user data read from uvspec output file to various data fields.
+        """ Distribute flux/user data read from uvspec output file to various output data fields.
         This method will look at `output_user` options and attempt to assign flux/user data in a sensible way.
         .. note::
 
@@ -1030,8 +1026,12 @@ class Case(object):
             how this data should be assigned.
 
         :param fluxdata: Flux (irradiance) data read from uvspec output file
+
+        The data will be returned in one or more of the fields specified in uvspecOutVars
+
         :return: None
         """
+
         #TODO rename this function to just distribute_data ?
         # First split the data amongst output levels or output wavelengths/wavenumbers
         # We assume and handle only those cases of output_user where the primary variable is
@@ -1416,6 +1416,7 @@ class Case(object):
         if self.solver == 'mystic':
             # TODO : Read mystic fluxes and radiances from mc.flx.spc and mc.rad.spc
             warnings.warn('Reading of mc.flx.spc and mc.rad.spc skipped. To be implemented.')
+
         # Perform further processing of outputs, mainly production of xr.DataArray versions of outputs.
         self.process_outputs()
 

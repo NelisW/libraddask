@@ -12,3 +12,30 @@ https://mobaxterm.mobatek.net/ (free for personal user)
 http://www.straightrunning.com/XmingNotes/ (free)
 
 https://www.netsarang.com/en/xshell/ (free for personal user) 
+
+
+\section{Remote Editing}
+If you feel adventurous, try so use Visual Studio Code to edit files on the server\\
+\lstinline{https://www.petri.com/how-to-edit-linux-files-remotely-in-windows-using-visual-studio-code } 
+
+\section{Shell Scripts}
+
+On the nimbus server create the following shell scripts and mark them as executable. Then run the scripts to speed up the process of starting the scheduler and worker tasks.  The scripts should be run by the \lstinline{source} mechanism otherwise the conda execution does not work.
+
+\lstinline{dasksched.sh}
+\begin{lstlisting}
+conda activate mordevpy37
+dask-scheduler
+\end{lstlisting}
+
+\lstinline{daskwork.sh} (assuming that the scheduler is running on \lstinline{tcp://146.64.246.94:8786})
+\begin{lstlisting}
+cd libRadtran/libRadtran-2.0.3/bin    
+conda activate mordevpy37    
+dask-worker tcp://146.64.246.94:8786 --nprocs 8
+\end{lstlisting}
+
+Then, in two different terminals, run them by
+\begin{lstlisting}
+source scriptname.sh
+\end{lstlisting}

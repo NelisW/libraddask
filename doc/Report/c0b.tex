@@ -142,12 +142,23 @@ The following files were changed with the original additions by Derek Griffith (
 
 \end{enumerate}
 
-Todo
-\begin{enumerate}
-
-\item Numerous cases where integers were expected and floats were provided (Python 3 is stricter and does not do automatic conversions)
-
-\end{enumerate}
 
 \section{New Code Testing}
-\todo{complete Testing}
+
+The following tests were done on revision 
+\lstinline{SHA-1: 678c42400523b7d730d6646132e271a7cacd8ab4}.
+These tests are not exhaustive or very deep. The focus was more on determining if the porting to Python~3 did not cause breaking changes.
+
+\begin{enumerate}
+\item \lstinline{libraddask_test.py}.  The libRadtran files were scanned and all possible options that can be set.  The test entails creating an \lstinline{empty libraddask.rad.librad.Case} instance and then setting the options available by \lstinline{set_option()} observing the resulting \lstinline{case} output.  Some options coded in the files were not available and such \lstinline{set-option()} lines were commented out.  The data used in this test are not representative of values that have any physical significance, do this test must not be seen as a tutorial on how to use.
+
+\item 
+The notebook shown in Section~\ref{chap:ServerUserManual} was executed and checked for correct operation.  It executed all required functionality.
+
+One issue arose: the \libradtran{} results different from transmittance results calculated for an atmosphere with a given set of Angstrom coefficients.  This is not a package issue, it is a \libradtran{} issue, still to be resolved.
+
+\item
+A number of internal (proprietary) notebooks were executed against this version of the package and all notebooks completed successfully. 
+
+
+\end{enumerate}

@@ -484,10 +484,10 @@ Workers capture durations associated to tasks. For each task that passes through
 \item Serialization (gray)
 \item Dependency gathering from peers (red)
 \item Disk I/O to collect local data (orange)
-\item Execution times (colored by task)
+\item Execution times (coloured by task)
 \end{itemize}
 
-The main way to observe these times is with the task stream plot on the scheduler's /status page where the colors of the bars correspond to the colors listed above.
+The main way to observe these times is with the task stream plot on the scheduler's /status page where the colours of the bars correspond to the colours listed above.
 
 
 \lstinline{https://docs.dask.org/en/latest/diagnostics-distributed.html}
@@ -529,7 +529,7 @@ http://127.0.0.1:8787
 
 \end{lstlisting}
 
-Open a browser window with the above URI (for the currently running client). Set the \verb+if+ condition to \verb+True+ and execute the code below to observe the dashboard in action.
+Open a browser window with the above \ac{URI} (for the currently running client). Set the \verb+if+ condition to \verb+True+ and execute the code below to observe the dashboard in action.
 The code below is not meaningful it is just meant to keep Dask busy for a while.
 
 
@@ -820,7 +820,7 @@ Either of the above should start the scheduler:
 dask-worker tcp://146.64.246.94:8786
 \end{lstlisting}
 
-where the IP address and port number must correspond to the scheduler IP and port address. This should start the worker task. Note that the dashboard IP address is also given when the workers start. Without explicitly defining the number of processors, this server has 32 cores and 32 GB memory.    
+where the IP address and port number must correspond to the scheduler IP and port address. This should start the worker task. Note that the dashboard IP address is also given when the workers start. Without explicitly defining the number of processors, this server has 32 cores and 32 \ac{GB} memory.    
 
 \begin{lstlisting}[style=tinysize]
 (mordevpy37) dgriffith@nimbus:~$ dask-worker tcp://146.64.246.94:8786
@@ -846,7 +846,7 @@ By default Dask creates a single process with as many threads as you have logica
 dask-worker ... --nprocs 1 --nthreads 8  # assuming you have eight cores
 dask-worker ...                          # this is actually the default setting
 \end{lstlisting}
-Using few processes and many threads per process is good if you are doing mostly numeric workloads, such as are common in Numpy, Pandas, and Scikit-Learn code, which is not affected by Python's Global Interpreter Lock (GIL).
+Using few processes and many threads per process is good if you are doing mostly numeric workloads, such as are common in Numpy, Pandas, and Scikit-Learn code, which is not affected by Python's   \ac{GIL}.
 However, if you are spending most of your compute time manipulating Pure Python objects like strings or dictionaries then you may want to avoid GIL issues by having more processes with fewer threads each
 \begin{lstlisting}
 dask-worker ... --nprocs 8 --nthreads 1

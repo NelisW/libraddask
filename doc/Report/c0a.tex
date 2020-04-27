@@ -7,7 +7,7 @@
 A simple Dask compute graph is demonstrated here, taken from 
 \lstinlineN{https://towardsdatascience.com/why-every-data-scientist-should-use-dask-81b2b850e15b}
 
-A common pattern I encounter regularly involves looping over a list of items and executing a python method for each item with different input arguments. Common data processing scenarios include, calculating feature aggregates for each customer or performing log event aggregation for each student. Instead of executing a function for each item in the loop in a sequential manner, Dask Delayed allows multiple items to be processed in parallel. With Dask Delayed each functaion call is queued, added to an execution graph and scheduled.
+A common pattern I encounter regularly involves looping over a list of items and executing a python method for each item with different input arguments. Common data processing scenarios include, calculating feature aggregates for each customer or performing log event aggregation for each student. Instead of executing a function for each item in the loop in a sequential manner, Dask Delayed allows multiple items to be processed in parallel. With Dask Delayed each function call is queued, added to an execution graph and scheduled.
 
 Writing custom thread handling or using \lstinlineN{asyncio} has always looked a bit tedious to me, so I'm not even going to bother with showing you comparative examples. With Dask, you don't need to change your programming style or syntax! You just need to annotate or wrap the method that will be executed in parallel with \lstinlineN{@dask.delayed} and call the compute method after the loop code.
 

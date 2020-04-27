@@ -11,14 +11,14 @@ From \cite{EmdeLibRadtran2016}:
 ``\libradtran{} is a widely used software package for
 radiative transfer calculations. It allows one to compute (polarized) radiances, irradiance, and actinic fluxes in the solar and thermal spectral regions. \libradtran{} has been used
 for various applications, including remote sensing of clouds,
-aerosols and trace gases in the Earth’s atmosphere, climate
+aerosols and trace gases in the Earth's atmosphere, climate
 studies, e.g., for the calculation of radiative forcing due to
 different atmospheric components, for UV forecasting, the
 calculation of photolysis frequencies, and for remote sensing
 of other planets in our solar system. The package has been
 described in Mayer and Kylling (2005) \cite{libRadtran2005}. Since then several
 new features have been included, for example polarization,
-Raman scattering, a new molecular gas absorption parameterization, and several new parameterizations of cloud and
+Raman scattering, a new molecular gas absorption parameterisation, and several new parameterizations of cloud and
 aerosol optical properties. Furthermore, a graphical user interface is now available, which greatly simplifies the usage
 of the model, especially for new users. This paper gives an
 overview of \libradtran{} version 2.0.1 with a focus on new features. Applications including these new features are provided
@@ -33,18 +33,60 @@ See also
 
 \section{Obtaining and Building \libradtran{}}
 
-\subsection{System Reference}
-For reference purposes this installation was done on the following Linux system: Debian 4.9.110, running the 4.9.0-8-amd64 Linux kernel.
+\section{Reference Systems}
+For reference purposes this installation was done on the following Linux systems.
+
+\subsubsection{Nimbus Server}
+This is an existing server that had \libradtran{} 2.0.0 running on it before, so all the pre-requisites were installed.  
+
 \begin{lstlisting}[style=tinysize]
 (mordevpy27) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3/examples$ uname -a
 Linux nimbus 4.9.0-8-amd64 #1 SMP Debian 4.9.110-3+deb9u6 (2018-10-08) x86_64 GNU/Linux
 \end{lstlisting}
+
+\subsubsection{Fresh Install}
+
+This was a newly-set-up Ubuntu 20.04 installation, in an Oracle VirtualBox (Ver 6.1.6).  This means that none of the prequisites were already installed on the system.
+
+\begin{lstlisting}[style=tinysize]
+(base) nwillers@nwillers-VirtualBox:~$ uname -a 
+Linux nwillers-VirtualBox 5.4.0-26-generic #30-Ubuntu SMP Mon Apr 20 16:58:30 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
+\end{lstlisting}
+
+The initial installation (for other general development work) was as follows. The packages were installed using synaptic, my preferred Ubuntu installer.
+
+\begin{enumerate}
+\itemsep-0.5em 
+\item CMake.
+\item Make (4.2.1-1.2).
+\item GCC (4:9.3.0-1ubuntu2).
+\item Perl (might be installed already).
+\item gparted.
+\item Konsole.
+\item Kdiff.
+\item git.
+\end{enumerate}
+
+\libradtran{} requires additional tools: \lstinline{http://www.libradtran.org/doku.php?id=download}.
+Don't take shortcuts, it does not work. Take the trouble to install these (in the Ubuntu package name convention):
+
+\begin{enumerate}
+\itemsep-0.5em 
+\item flex.
+\item gfortran.
+\item NetCDF for C: libnetcdf-dev.
+\item NetCDF for Fortran: libnetcdff-dev.
+\item The GNU Scientific Library: gsl-bin, libgsl-dev, libgsl23 libglscblas0.
+\end{enumerate}
+
 
 \subsection{Downloading  \libradtran{}}
 
 Download \libradtran{} and the optional additional files/modules from\\
 \lstinline{http://www.libradtran.org/doku.php?id=download}\\
 For our application the REPTRAN absorption parameterization data was required, but it may differ between different sites.
+
+
 
 
 \subsection{Create the server account and software}
@@ -192,7 +234,7 @@ make[1]: Leaving directory '/home/dgriffith/libRadtran/libRadtran-2.0.3/test'
 (devpy27) dgriffith@nimbus:~/libRadtran/libRadtran-2.0.3$
 \end{lstlisting}
 
-From the above test report it is evident that the \lstinline{MYSTIC polarized surface reflection (BPDF)} test had a result error difference of 1.03\%.
+From the above test report it is evident that the \lstinline{MYSTIC} polarized surface reflection \ac{BPDF} test had a result error difference of 1.03\%.
 All the other tests passed.
 
 On the matter of tests failing in the check phase, see\\

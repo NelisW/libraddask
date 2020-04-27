@@ -7,11 +7,11 @@
 With the \libraddask{} server running on a remote Linux computer, some tools would be required to access the server from a local Windows computer.  There are several options available, from simple terminals to complex X-server applications.  Consider one of the following:
 
 
-https://mobaxterm.mobatek.net/ (free for personal user) 
+\lstinline{https://mobaxterm.mobatek.net/} (free for personal user) 
 
-http://www.straightrunning.com/XmingNotes/ (free)
+\lstinline{http://www.straightrunning.com/XmingNotes/} (free)
 
-https://www.netsarang.com/en/xshell/ (free for personal user) 
+\lstinline{https://www.netsarang.com/en/xshell/} (free for personal user)
 
 
 \section{Remote Editing}
@@ -20,7 +20,7 @@ If you feel adventurous, try so use Visual Studio Code to edit files on the serv
 
 \section{Shell Scripts}
 
-On the nimbus server create the following shell scripts and mark them as executable. Then run the scripts to speed up the process of starting the scheduler and worker tasks.  The scripts should be run by the \lstinline{source} mechanism otherwise the conda execution does not work.
+On the nimbus server create the following shell scripts and mark them as executable. Then run the scripts to speed up the process of starting the scheduler and worker tasks.  The scripts should be run by the \lstinline{source} mechanism otherwise the \lstinline{conda} execution does not work.
 
 \lstinline{dasksched.sh}
 \begin{lstlisting}

@@ -23,7 +23,7 @@ model is preferred. REPTRAN provides a full spectral calculation or rapid band m
 for a variety of satellite sensors.
 
 libRadtran is able to calculate radiances and irradiances when the sun is below the horizon by up
-to 9 degrees or more. This is well into "nautical" twilight. The MYSTIC monte carlo solver is
+to 9 degrees or more. This is well into ``nautical'' twilight. The MYSTIC monte carlo solver is
 required to perform twilight computations.
 
 
@@ -34,6 +34,11 @@ This version ported all the code to Python 3 and uses the  the \libradtran{} 2.0
 No new substantial functionality is added.
 This present document was added by its author as a means to document the new project.
 
+\section{Code Availability}
+
+The \libraddask{} package is available here \cite{Willerslibraddask2020}:\\
+\lstinline{https://github.com/NelisW/libraddask}
+
 \section{Example Case Study}
 
 For the practical example in this document, assume the following (will be different in your installation):
@@ -41,12 +46,12 @@ For the practical example in this document, assume the following (will be differ
 \item The Dask client will be activated in code run on a local computer using Windows.  The Dask scheduler and workers will be running on a remote server using Linux.
 \item Server (Linux):
 \begin{enumerate}
-\item The server is called \lstinline{nimbus} with IP address \lstinline{146.64.246.94}
+\item The server is called \lstinline{nimbus} with \ac{IP} address \lstinline{146.64.246.94}
 \item The work is done from  user account \lstinline{dgriffith} on the server.
 \item The Python and dask packages are set up in the \lstinline{mordevpy37} conda environment  on the server.
 \end{enumerate}
 
-\item Local PC (Windows):
+\item Local \ac{PC} (Windows):
 \begin{enumerate}
 \item The Python and dask packages are set up in the \lstinline{mort} conda environment  on the local computer.
 \end{enumerate}
@@ -72,4 +77,3 @@ Appendix~\ref{chap:SimpleDaskExamples} contains additional Dask examples.
 Appendix~\ref{chap:Portingscr_pytoPython3}  contains a description of the porting of the \libradtran{} Python files in \lstinline{scr_py} to Python 3.
 
 Appendix~\ref{chap:Tools}  contains additional information on tools that may be useful when using \libraddask{}.
- 

@@ -103,8 +103,10 @@ For our application the REPTRAN absorption parameterization data was required, b
 \end{lstlisting}
 \item The \libradtran{} installation, building, and testing requires Python 2.7 (installation will fail if Python 3 is used).  If necessary, install Python 2.7 in a conda environment in order to proceed with the \libradtran{} installation.  For the purpose of this discussion we assume that the Python 2.7 environment is named \lstinline{devpy27}.
 
+It seems that you do not need a full Anaconda Python 2.7 (including all the scientific libraries). It is sufficient to install only a conda:
+
 \begin{lstlisting}
-    conda create --name devpy27 python=2.7 anaconda
+    conda create --name devpy27 python=2.7 
 \end{lstlisting}
 
 \item Compile the distribution by doing the following:
